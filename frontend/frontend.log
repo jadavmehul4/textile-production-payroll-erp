@@ -1,0 +1,20 @@
+
+> frontend@0.1.0 dev
+> next dev -p 3005
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3005
+- Network:       http://192.168.0.2:3005
+
+✓ Starting...
+✓ Ready in 2.3s
+ GET /login 200 in 1751ms (compile: 1335ms, render: 416ms)
+ GET /login 200 in 76ms (compile: 6ms, render: 70ms)
+ GET /login 200 in 324ms (compile: 143ms, render: 182ms)
+ GET /dashboard 200 in 271ms (compile: 121ms, render: 150ms)
+ GET /login 200 in 62ms (compile: 5ms, render: 57ms)
+ GET /dashboard 200 in 77ms (compile: 4ms, render: 74ms)
+ GET /login 200 in 1916ms (compile: 440ms, render: 1475ms)
+ GET /dashboard 200 in 222ms (compile: 55ms, render: 166ms)
+○ Compiling /master-data ...
+ GET /master-data 200 in 4.4s (compile: 4.4s, render: 69ms)

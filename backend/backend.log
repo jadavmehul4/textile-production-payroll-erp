@@ -1,0 +1,16 @@
+Watching for file changes with StatReloader
+[15/Mar/2026 20:06:09] "OPTIONS /api/token/ HTTP/1.1" 200 0
+[15/Mar/2026 20:06:10] "POST /api/token/ HTTP/1.1" 200 489
+[15/Mar/2026 20:06:11] "OPTIONS /api/reports/dashboard/ HTTP/1.1" 200 0
+[15/Mar/2026 20:06:11] "GET /api/reports/dashboard/ HTTP/1.1" 200 93
+[15/Mar/2026 20:06:55] "OPTIONS /api/token/ HTTP/1.1" 200 0
+[15/Mar/2026 20:06:56] "POST /api/token/ HTTP/1.1" 200 489
+[15/Mar/2026 20:06:56] "OPTIONS /api/reports/dashboard/ HTTP/1.1" 200 0
+[15/Mar/2026 20:06:56] "GET /api/reports/dashboard/ HTTP/1.1" 200 93
+[22/Mar/2026 03:47:09] "OPTIONS /api/token/ HTTP/1.1" 200 0
+[22/Mar/2026 03:47:10] "POST /api/token/ HTTP/1.1" 200 489
+[22/Mar/2026 03:47:11] "OPTIONS /api/reports/dashboard/ HTTP/1.1" 200 0
+[22/Mar/2026 03:47:11] "GET /api/reports/dashboard/ HTTP/1.1" 200 93
+[22/Mar/2026 03:47:16] "OPTIONS /api/master-data/units/ HTTP/1.1" 200 0
+[22/Mar/2026 03:47:16] "GET /api/master-data/units/ HTTP/1.1" 200 150
+[22/Mar/2026 03:47:16] "GET /api/master-data/units/ HTTP/1.1" 200 150
