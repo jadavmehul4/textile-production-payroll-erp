@@ -48,7 +48,7 @@ class UnitTamperingSecurityTest(TestCase):
         client.force_authenticate(user=self.user_a)
         
         # Attempt to access Unit B data by passing unit_id param
-        response = client.get(f'/api/erp/employees/?unit_id={self.unit_b.id}')
+        response = client.get(f'/api/erp/employees/?unit_id={self.unit_b.id}', follow=True)
         # Even if they pass unit_id, for_user() and middleware must ensure they only see Unit A
         self.assertEqual(response.status_code, 200)
         for emp in response.data:

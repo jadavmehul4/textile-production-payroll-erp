@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 
 export default function MasterDataPage() {
   const [activeTab, setActiveTab] = useState('units');
@@ -17,10 +17,7 @@ export default function MasterDataPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get(`http://localhost:8000/api/master-data/${activeTab}/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.get(`/api/master-data/${activeTab}/`);
         setData(response.data);
       } catch (error) {
         console.error('Failed to fetch master data', error);

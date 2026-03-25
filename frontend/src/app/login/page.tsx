@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 
 export default function LoginPage() {
@@ -8,7 +7,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const { login } = useAuth();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const success = await login(username, password);
     if (success) {

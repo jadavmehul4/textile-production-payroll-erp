@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({ total_employees: 0, total_production: 0, total_payroll: 0 });
@@ -9,10 +9,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get('http://localhost:8000/api/reports/dashboard/', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.get('/api/reports/dashboard/');
         setStats(response.data.stats);
         setRecentProduction(response.data.recent_production);
       } catch (error) {
@@ -42,7 +39,7 @@ export default function DashboardPage() {
             </tr>
           </thead>
           <tbody>
-            {recentProduction.map((entry, idx) => (
+            {recentProduction.map((entry: any, idx) => (
               <tr key={idx} className="border-b hover:bg-gray-50">
                 <td className="py-2">{entry.employee}</td>
                 <td className="py-2">{entry.quantity}</td>
@@ -57,7 +54,7 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ title, value, color }) {
+function StatCard({ title, value, color }: { title: string; value: string | number; color: string }) {
   return (
     <div className={`${color} text-white p-6 rounded-lg shadow-lg`}>
       <div className="text-sm uppercase font-semibold opacity-75">{title}</div>

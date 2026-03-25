@@ -18,3 +18,4 @@
  GET /dashboard 200 in 222ms (compile: 55ms, render: 166ms)
 ○ Compiling /master-data ...
  GET /master-data 200 in 4.4s (compile: 4.4s, render: 69ms)
+✓ Compiled in 145ms
