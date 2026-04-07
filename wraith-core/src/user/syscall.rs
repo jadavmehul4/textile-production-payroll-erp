@@ -4,6 +4,7 @@ use crate::ipc::manager::IPC_MANAGER;
 use crate::ipc::message::Message;
 use crate::scheduler::run_queue::RUN_QUEUE;
 use crate::scheduler::task::TaskState;
+use crate::drivers::input::KERNEL_INPUT;
 
 /// Initialize Syscall MSRs (STAR, LSTAR, FMASK).
 pub unsafe fn init_syscalls() {
@@ -75,6 +76,7 @@ extern "C" fn syscall_dispatcher(context: &mut ProcessContext) {
         4 => context.rax = sys_exec(context.rdi),
         5 => context.rax = sys_send(context.rdi, context.rsi, context.rdx),
         6 => context.rax = sys_receive(context.rdi, context.rsi),
+        7 => context.rax = sys_read_input(context.rdi, context.rsi),
         _ => {
             serial_println!("[WRAITH] Unknown syscall: {}", syscall_num);
             context.rax = 0xFFFFFFFFFFFFFFFF;
@@ -153,7 +155,6 @@ fn sys_receive(buf_ptr: u64, max_len: u64) -> u64 {
     let mut msg_opt = IPC_MANAGER.lock().receive(pid);
 
     if msg_opt.is_none() {
-        // Block until message arrives
         {
             let mut rq = RUN_QUEUE.lock();
             if let Some(task) = rq.get_current_mut() {
@@ -161,7 +162,7 @@ fn sys_receive(buf_ptr: u64, max_len: u64) -> u64 {
                 crate::scheduler::set_reschedule_flag();
             }
         }
-        return 0xFFFFFFFFFFFFFFFE; // Retry marker or internal block
+        return 0xFFFFFFFFFFFFFFFE;
     }
 
     let msg = msg_opt.unwrap();
@@ -176,6 +177,35 @@ fn sys_receive(buf_ptr: u64, max_len: u64) -> u64 {
         }
     }
     0
+}
+
+fn sys_read_input(buf_ptr: u64, len: u64) -> u64 {
+    let mut input = KERNEL_INPUT.lock();
+    if input.is_empty() {
+        let mut rq = RUN_QUEUE.lock();
+        if let Some(task) = rq.get_current_mut() {
+            task.state = TaskState::Blocked;
+            crate::scheduler::set_reschedule_flag();
+        }
+        return 0; // Or retry marker
+    }
+
+    let mut count = 0;
+    if let Some(ref mm) = *crate::memory::manager::MEMORY_MANAGER.lock() {
+        if mm.validate_user_ptr(buf_ptr, len) {
+            while count < len {
+                if let Some(byte) = input.pop() {
+                    unsafe {
+                        *( (buf_ptr + count) as *mut u8 ) = byte;
+                    }
+                    count += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    count
 }
 
 fn sys_write(fd: u64, buf: u64, len: u64) -> u64 {

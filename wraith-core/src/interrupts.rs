@@ -16,8 +16,11 @@ lazy_static! {
         idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
         idt.divide_error.set_handler_fn(divide_error_handler);
 
-        // Timer Interrupt (Local APIC)
+        // Timer Interrupt (LAPIC 32)
         idt[32].set_handler_fn(timer_interrupt_handler);
+
+        // Keyboard Interrupt (IRQ1 -> Vector 33)
+        idt[33].set_handler_fn(keyboard_interrupt_handler);
 
         idt
     };
@@ -31,6 +34,23 @@ extern "x86-interrupt" fn timer_interrupt_handler(
     _stack_frame: InterruptStackFrame)
 {
     crate::scheduler::tick();
+    unsafe {
+        crate::scheduler::timer::send_eoi();
+    }
+}
+
+extern "x86-interrupt" fn keyboard_interrupt_handler(
+    _stack_frame: InterruptStackFrame)
+{
+    use crate::drivers::keyboard::Keyboard;
+    use crate::drivers::input::KERNEL_INPUT;
+
+    if let Some(scancode) = Keyboard::read_scancode() {
+        if let Some(ascii) = Keyboard::scancode_to_ascii(scancode) {
+            KERNEL_INPUT.lock().push(ascii as u8);
+        }
+    }
+
     unsafe {
         crate::scheduler::timer::send_eoi();
     }
