@@ -17,6 +17,7 @@ pub mod user;
 pub mod scheduler;
 pub mod process;
 pub mod elf;
+pub mod fs;
 
 // Import linker symbols for allocator initialization
 extern "C" {
@@ -88,49 +89,59 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
     serial_println!("Wraith Core: Heap Allocator Initialized.");
 
-    // 7. Initialize Syscalls
+    // 7. Initialize File System
+    fs::init_fs();
+    serial_println!("Wraith Core: VFS Initialized.");
+
+    // 8. Test File System
+    if let Some(mut file) = fs::vfs::open("/test.txt") {
+        serial_println!("Wraith Core: File Opened successfully.");
+        let mut buf = [0u8; 32];
+        let bytes_read = fs::vfs::read(&mut file, &mut buf);
+        if let Ok(s) = core::str::from_utf8(&buf[..bytes_read]) {
+            println!("[FS] /test.txt: {}", s);
+            serial_println!("Wraith Core: [FS] /test.txt content: {}", s);
+        }
+    } else {
+        serial_println!("Wraith Core: [ERROR] Failed to open /test.txt");
+    }
+
+    // 9. Initialize Syscalls
     unsafe {
         user::syscall::init_syscall_stack();
         user::syscall::init_syscalls();
     }
     serial_println!("Wraith Core: Syscall Interface Initialized.");
 
-    // 8. Initialize Timer and Scheduler
+    // 10. Initialize Timer and Scheduler
     unsafe {
         scheduler::timer::init();
     }
     serial_println!("Wraith Core: LAPIC Timer Initialized.");
 
-    // 9. Load and execute User Process from ELF
-    serial_println!("Wraith Core: Loading User Process (ELF)...");
-
-    // Minimal mock ELF image for testing (Valid ELF header for x86_64)
-    // In a real scenario, this would be include_bytes!("path/to/binary")
+    // 11. Load and execute User Process from ELF (Mock)
     let mock_elf: [u8; 120] = [
-        0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, // Magic, Class 64, Little Endian
+        0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x02, 0x00, 0x3e, 0x00, 0x01, 0x00, 0x00, 0x00, // Executable, x86_64
-        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Entry point: 0x400000
-        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // PH offset: 64
+        0x02, 0x00, 0x3e, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x38, 0x00, // Header size, PH entry size
-        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // PH count: 1
-
-        // Program Header (PT_LOAD)
-        0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, // PT_LOAD, PF_R | PF_X
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Offset: 0
-        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // VAddr: 0x400000
+        0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x38, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // File size: 120
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Mem size: 4096 (triggers BSS zeroing)
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Align: 4KB
+        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 
     process::process::spawn_elf_process(&mock_elf, x86_64::VirtAddr::new(0x800000));
     process::process::spawn_idle_task(x86_64::VirtAddr::new(0x900000), x86_64::PhysAddr::new(kernel_pml4_phys));
 
-    println!("Wraith Core: ELF Processes loaded.");
-    serial_println!("Wraith Core: System fully initialized.");
+    println!("Wraith Core: System fully initialized.");
 
     x86_64::instructions::interrupts::enable();
     scheduler::set_reschedule_flag();
@@ -144,21 +155,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 extern crate alloc;
 
 /// Custom panic handler for bare-metal environment.
-/// Implements the "Wraith Screen of Death".
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     serial_println!("\n!!! KERNEL PANIC !!!");
     serial_println!("{}", info);
-
     vga::set_panic_color();
     println!("--- WRAITH CORE KERNEL PANIC ---");
     println!("\n{}", info);
-
     if let Some(location) = info.location() {
         serial_println!("Panic at {}:{}", location.file(), location.line());
         println!("Panic at {}:{}", location.file(), location.line());
     }
-
     loop {
         x86_64::instructions::hlt();
     }
