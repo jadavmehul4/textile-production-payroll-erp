@@ -18,6 +18,7 @@ pub mod scheduler;
 pub mod process;
 pub mod elf;
 pub mod fs;
+pub mod ipc;
 
 // Import linker symbols for allocator initialization
 extern "C" {
@@ -88,9 +89,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
     serial_println!("Wraith Core: Heap Allocator Initialized.");
 
-    // 7. Initialize File System
+    // 7. Initialize File System and IPC
     fs::init_fs();
-    serial_println!("Wraith Core: VFS Initialized.");
+    ipc::init_ipc();
+    serial_println!("Wraith Core: VFS & IPC Initialized.");
 
     // 8. Initialize Syscalls
     unsafe {
@@ -105,24 +107,49 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
     serial_println!("Wraith Core: LAPIC Timer Initialized.");
 
-    // 10. Load Initial Task (Mock loader)
-    let user_code_virt = x86_64::VirtAddr::new(0x0000_0000_0040_0000);
-    let user_stack_top = x86_64::VirtAddr::new(0x0000_7FFF_FFFF_F000);
+    // 10. Create Isolated Tasks (A sends to B)
+    let user_code_a = x86_64::VirtAddr::new(0x0000_0000_0040_0000);
+    let user_stack_a_top = x86_64::VirtAddr::new(0x0000_7FFF_FFFF_F000);
+    let user_code_b = x86_64::VirtAddr::new(0x0000_0000_0040_0000);
+    let user_stack_b_top = x86_64::VirtAddr::new(0x0000_7FFF_FFFF_F000);
 
-    // Assembly for sys_exec("/bin/app")
-    let exec_logic = [
-        0x48, 0xc7, 0xc0, 0x04, 0x00, 0x00, 0x00, // mov rax, 4 (exec)
-        0x48, 0x8d, 0x3d, 0x01, 0x00, 0x00, 0x00, // lea rdi, [rip+1]
+    // Assembly for Task A: sys_send(2, "MsgA", 4), sys_exit(0)
+    let logic_a = [
+        0x48, 0xc7, 0xc0, 0x05, 0x00, 0x00, 0x00, // mov rax, 5 (send)
+        0x48, 0xc7, 0xc7, 0x02, 0x00, 0x00, 0x00, // mov rdi, 2 (target PID)
+        0x48, 0x8d, 0x35, 0x0a, 0x00, 0x00, 0x00, // lea rsi, [rip+10]
+        0x48, 0xc7, 0xc2, 0x04, 0x00, 0x00, 0x00, // mov rdx, 4
         0x0f, 0x05,                               // syscall
-        0xeb, 0xfe,                               // loop
+        0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00, // mov rax, 0 (exit)
+        0x0f, 0x05,                               // syscall
     ];
-    let mut code_a = [0u8; 128];
+    let mut code_a = [0u8; 64];
     unsafe {
-        core::ptr::copy_nonoverlapping(exec_logic.as_ptr(), code_a.as_mut_ptr(), exec_logic.len());
-        core::ptr::copy_nonoverlapping(b"/bin/app\0".as_ptr(), code_a.as_mut_ptr().add(exec_logic.len()), 9);
+        core::ptr::copy_nonoverlapping(logic_a.as_ptr(), code_a.as_mut_ptr(), logic_a.len());
+        core::ptr::copy_nonoverlapping(b"MsgA".as_ptr(), code_a.as_mut_ptr().add(logic_a.len()), 4);
     }
 
-    process::process::spawn_user_task(user_code_virt, user_stack_top, x86_64::VirtAddr::new(0x800000), &code_a);
+    // Assembly for Task B: sys_receive(buf, 64), sys_write(1, buf, len), sys_exit(0)
+    let logic_b = [
+        0x48, 0xc7, 0xc0, 0x06, 0x00, 0x00, 0x00, // mov rax, 6 (receive)
+        0x48, 0x8d, 0x3d, 0x40, 0x00, 0x00, 0x00, // lea rdi, [rip+64] (buffer)
+        0x48, 0xc7, 0xc2, 0x40, 0x00, 0x00, 0x00, // mov rdx, 64
+        0x0f, 0x05,                               // syscall
+        0x48, 0x89, 0xc2,                         // mov rdx, rax (len)
+        0x48, 0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, // mov rax, 1 (write)
+        0x48, 0xc7, 0xc7, 0x01, 0x00, 0x00, 0x00, // mov rdi, 1 (fd)
+        0x48, 0x8d, 0x35, 0x2e, 0x00, 0x00, 0x00, // lea rsi, [rip+46] (buffer)
+        0x0f, 0x05,                               // syscall
+        0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00, // mov rax, 0 (exit)
+        0x0f, 0x05,                               // syscall
+    ];
+    let mut code_b = [0u8; 128];
+    unsafe {
+        core::ptr::copy_nonoverlapping(logic_b.as_ptr(), code_b.as_mut_ptr(), logic_b.len());
+    }
+
+    process::process::spawn_user_task(user_code_a, user_stack_a_top, x86_64::VirtAddr::new(0x800000), &code_a);
+    process::process::spawn_user_task(user_code_b, user_stack_b_top, x86_64::VirtAddr::new(0x880000), &code_b);
     process::process::spawn_idle_task(x86_64::VirtAddr::new(0x900000), x86_64::PhysAddr::new(kernel_pml4_phys));
 
     println!("Wraith Core: System fully initialized.");

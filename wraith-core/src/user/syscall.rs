@@ -1,5 +1,9 @@
 use crate::{serial_println, println};
 use crate::user::context::ProcessContext;
+use crate::ipc::manager::IPC_MANAGER;
+use crate::ipc::message::Message;
+use crate::scheduler::run_queue::RUN_QUEUE;
+use crate::scheduler::task::TaskState;
 
 /// Initialize Syscall MSRs (STAR, LSTAR, FMASK).
 pub unsafe fn init_syscalls() {
@@ -69,6 +73,8 @@ extern "C" fn syscall_dispatcher(context: &mut ProcessContext) {
         2 => sys_yield(),
         3 => sys_sleep(context.rdi),
         4 => context.rax = sys_exec(context.rdi),
+        5 => context.rax = sys_send(context.rdi, context.rsi, context.rdx),
+        6 => context.rax = sys_receive(context.rdi, context.rsi),
         _ => {
             serial_println!("[WRAITH] Unknown syscall: {}", syscall_num);
             context.rax = 0xFFFFFFFFFFFFFFFF;
@@ -96,7 +102,6 @@ fn sys_sleep(ms: u64) {
 
 fn sys_exec(path_ptr: u64) -> u64 {
     if let Some(ref mm) = *crate::memory::manager::MEMORY_MANAGER.lock() {
-        // Basic path length check and validation
         if mm.validate_user_ptr(path_ptr, 1) {
             let mut path_buf = [0u8; 128];
             let mut i = 0;
@@ -109,14 +114,68 @@ fn sys_exec(path_ptr: u64) -> u64 {
                 }
             }
             if let Ok(path) = core::str::from_utf8(&path_buf[..i]) {
-                serial_println!("[WRAITH] sys_exec: {}", path);
                 if let Ok(_) = crate::process::process::exec_process(path) {
-                    return 0; // Success (though context will be replaced)
+                    return 0;
                 }
             }
         }
     }
-    0xFFFFFFFFFFFFFFFF // Error
+    0xFFFFFFFFFFFFFFFF
+}
+
+fn sys_send(target_pid: u64, buf_ptr: u64, len: u64) -> u64 {
+    if len > Message::MAX_SIZE as u64 { return 1; }
+
+    let sender_pid = {
+        let mut rq = RUN_QUEUE.lock();
+        rq.get_current_mut().map(|t| t.id).unwrap_or(0)
+    };
+
+    if let Some(ref mm) = *crate::memory::manager::MEMORY_MANAGER.lock() {
+        if mm.validate_user_ptr(buf_ptr, len) {
+            let data = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, len as usize) }.to_vec();
+            let msg = Message::new(sender_pid, data);
+
+            if IPC_MANAGER.lock().send(target_pid, msg).is_ok() {
+                return 0;
+            }
+        }
+    }
+    1
+}
+
+fn sys_receive(buf_ptr: u64, max_len: u64) -> u64 {
+    let pid = {
+        let mut rq = RUN_QUEUE.lock();
+        rq.get_current_mut().map(|t| t.id).unwrap_or(0)
+    };
+
+    let mut msg_opt = IPC_MANAGER.lock().receive(pid);
+
+    if msg_opt.is_none() {
+        // Block until message arrives
+        {
+            let mut rq = RUN_QUEUE.lock();
+            if let Some(task) = rq.get_current_mut() {
+                task.state = TaskState::Blocked;
+                crate::scheduler::set_reschedule_flag();
+            }
+        }
+        return 0xFFFFFFFFFFFFFFFE; // Retry marker or internal block
+    }
+
+    let msg = msg_opt.unwrap();
+    let copy_len = core::cmp::min(msg.data.len(), max_len as usize);
+
+    if let Some(ref mm) = *crate::memory::manager::MEMORY_MANAGER.lock() {
+        if mm.validate_user_ptr(buf_ptr, copy_len as u64) {
+            unsafe {
+                core::ptr::copy_nonoverlapping(msg.data.as_ptr(), buf_ptr as *mut u8, copy_len);
+            }
+            return copy_len as u64;
+        }
+    }
+    0
 }
 
 fn sys_write(fd: u64, buf: u64, len: u64) -> u64 {
