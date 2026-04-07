@@ -1,5 +1,6 @@
 use crate::fs::file::File;
 use spin::Mutex;
+use alloc::vec::Vec;
 
 /// Common interface for any filesystem implementation.
 pub trait FileSystem: Send + Sync {
@@ -28,4 +29,19 @@ pub fn read(file: &mut File, buf: &mut [u8]) -> usize {
     } else {
         0
     }
+}
+
+/// Helper to read the entire contents of a file into a buffer.
+pub fn read_all(path: &str) -> Option<Vec<u8>> {
+    let mut file = open(path)?;
+    let mut buffer = Vec::new();
+    let mut temp = [0u8; 512];
+
+    loop {
+        let bytes_read = read(&mut file, &mut temp);
+        if bytes_read == 0 { break; }
+        buffer.extend_from_slice(&temp[..bytes_read]);
+    }
+
+    Some(buffer)
 }

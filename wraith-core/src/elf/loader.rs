@@ -6,6 +6,11 @@ use crate::memory::paging::flags::PageTableFlags;
 use crate::process::memory_space::MemorySpace;
 use x86_64::{VirtAddr, PhysAddr};
 
+pub struct LoadedElf {
+    pub entry_point: u64,
+    pub memory_space: MemorySpace,
+}
+
 pub struct ElfLoader<'a> {
     parser: ElfParser<'a>,
 }
@@ -17,8 +22,14 @@ impl<'a> ElfLoader<'a> {
         }
     }
 
+    /// Load the ELF from a buffer into a new memory space.
+    pub unsafe fn load_from_buffer(buf: &'a [u8]) -> Result<LoadedElf, ElfError> {
+        let loader = Self::new(buf);
+        loader.load()
+    }
+
     /// Load the ELF into a new memory space.
-    pub unsafe fn load(&self) -> Result<(MemorySpace, u64), ElfError> {
+    pub unsafe fn load(&self) -> Result<LoadedElf, ElfError> {
         let header = self.parser.parse_header()?;
         let phs = self.parser.program_headers(&header)?;
 
@@ -38,7 +49,10 @@ impl<'a> ElfLoader<'a> {
             }
         }
 
-        Ok((space, header.e_entry))
+        Ok(LoadedElf {
+            entry_point: header.e_entry,
+            memory_space: space,
+        })
     }
 
     /// Map a loadable segment and copy its data.
@@ -56,7 +70,7 @@ impl<'a> ElfLoader<'a> {
         // We map it as WRITABLE initially to allow the kernel to copy the data
         let phys_start = mm.map_user_region_get_phys(space, virt_start, mem_size, PageTableFlags::WRITABLE);
 
-        // Copy segment data from ELF image using HHDM to access physical frames
+        // Copy segment data using HHDM
         let segment_data = &self.parser.data[ph.p_offset as usize..(ph.p_offset as usize + file_size)];
         let dest_ptr = crate::memory::paging::mapper::phys_to_virt_with_offset(phys_start, crate::memory::layout::PHYS_OFFSET).as_mut_ptr::<u8>();
 

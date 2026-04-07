@@ -12,17 +12,8 @@ pub unsafe fn init_syscalls() {
 
     Efer::update(|f| f.insert(EferFlags::SYSTEM_CALL_EXTENSIONS));
 
-    // STAR: CS/SS for syscall and sysret
-    // Standard setup for sysretq:
-    // Kernel base selector in bits 32..47
-    // User base selector in bits 48..63
-    // sysretq expects user_cs = user_base + 16, user_ss = user_base + 8.
-    // Our GDT: KernelCode (0x08), KernelData (0x10), UserData (0x18), UserCode (0x20)
-    // STAR setup: bits 48..63 = 0x1B (UserData RPL 3) - but sysretq needs user_base such that
-    // user_cs = base+16. So base = 0x20 - 16 = 0x10.
-    // However, 0x10 is KernelData. Let's re-order or use standard Linux-style GDT.
     Star::write(
-        selectors.user_data_selector, // Actually base for User CS/SS
+        selectors.user_data_selector,
         selectors.user_code_selector,
         selectors.kernel_code_selector,
         selectors.kernel_data_selector,
@@ -38,8 +29,6 @@ unsafe extern "C" fn syscall_entry() -> ! {
     core::arch::naked_asm!(
         "swapgs",
         "mov r12, rsp",
-        // Use per-task kernel stack (stored in GS or found via task pointer)
-        // For now, continue using a global stack for this phase but with Corrected Logic
         "mov rsp, [rip + {kernel_stack_ptr}]",
 
         "push 0x1b", // ss
@@ -79,6 +68,7 @@ extern "C" fn syscall_dispatcher(context: &mut ProcessContext) {
         1 => context.rax = sys_write(context.rdi, context.rsi, context.rdx),
         2 => sys_yield(),
         3 => sys_sleep(context.rdi),
+        4 => context.rax = sys_exec(context.rdi),
         _ => {
             serial_println!("[WRAITH] Unknown syscall: {}", syscall_num);
             context.rax = 0xFFFFFFFFFFFFFFFF;
@@ -102,6 +92,31 @@ fn sys_sleep(ms: u64) {
         task.sleep_ticks = ms / 10;
         crate::scheduler::set_reschedule_flag();
     }
+}
+
+fn sys_exec(path_ptr: u64) -> u64 {
+    if let Some(ref mm) = *crate::memory::manager::MEMORY_MANAGER.lock() {
+        // Basic path length check and validation
+        if mm.validate_user_ptr(path_ptr, 1) {
+            let mut path_buf = [0u8; 128];
+            let mut i = 0;
+            unsafe {
+                while i < 127 {
+                    let c = *( (path_ptr + i as u64) as *const u8 );
+                    if c == 0 { break; }
+                    path_buf[i] = c;
+                    i += 1;
+                }
+            }
+            if let Ok(path) = core::str::from_utf8(&path_buf[..i]) {
+                serial_println!("[WRAITH] sys_exec: {}", path);
+                if let Ok(_) = crate::process::process::exec_process(path) {
+                    return 0; // Success (though context will be replaced)
+                }
+            }
+        }
+    }
+    0xFFFFFFFFFFFFFFFF // Error
 }
 
 fn sys_write(fd: u64, buf: u64, len: u64) -> u64 {

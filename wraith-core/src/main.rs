@@ -58,7 +58,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
         core::arch::asm!("mov {}, cr3", out(reg) kernel_pml4_phys);
         kernel_pml4_phys &= !0xFFF;
-        let pml4_virt = x86_64::VirtAddr::new(kernel_pml4_phys + memory::layout::PHYS_OFFSET);
 
         static mut GLOBAL_FRAME_ALLOCATOR: Option<spin::Mutex<memory::frame_allocator::BitmapFrameAllocator>> = None;
         GLOBAL_FRAME_ALLOCATOR = Some(spin::Mutex::new(frame_allocator));
@@ -93,52 +92,37 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     fs::init_fs();
     serial_println!("Wraith Core: VFS Initialized.");
 
-    // 8. Test File System
-    if let Some(mut file) = fs::vfs::open("/test.txt") {
-        serial_println!("Wraith Core: File Opened successfully.");
-        let mut buf = [0u8; 32];
-        let bytes_read = fs::vfs::read(&mut file, &mut buf);
-        if let Ok(s) = core::str::from_utf8(&buf[..bytes_read]) {
-            println!("[FS] /test.txt: {}", s);
-            serial_println!("Wraith Core: [FS] /test.txt content: {}", s);
-        }
-    } else {
-        serial_println!("Wraith Core: [ERROR] Failed to open /test.txt");
-    }
-
-    // 9. Initialize Syscalls
+    // 8. Initialize Syscalls
     unsafe {
         user::syscall::init_syscall_stack();
         user::syscall::init_syscalls();
     }
     serial_println!("Wraith Core: Syscall Interface Initialized.");
 
-    // 10. Initialize Timer and Scheduler
+    // 9. Initialize Timer and Scheduler
     unsafe {
         scheduler::timer::init();
     }
     serial_println!("Wraith Core: LAPIC Timer Initialized.");
 
-    // 11. Load and execute User Process from ELF (Mock)
-    let mock_elf: [u8; 120] = [
-        0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x02, 0x00, 0x3e, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x38, 0x00,
-        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
+    // 10. Load Initial Task (Mock loader)
+    let user_code_virt = x86_64::VirtAddr::new(0x0000_0000_0040_0000);
+    let user_stack_top = x86_64::VirtAddr::new(0x0000_7FFF_FFFF_F000);
 
-    process::process::spawn_elf_process(&mock_elf, x86_64::VirtAddr::new(0x800000));
+    // Assembly for sys_exec("/bin/app")
+    let exec_logic = [
+        0x48, 0xc7, 0xc0, 0x04, 0x00, 0x00, 0x00, // mov rax, 4 (exec)
+        0x48, 0x8d, 0x3d, 0x01, 0x00, 0x00, 0x00, // lea rdi, [rip+1]
+        0x0f, 0x05,                               // syscall
+        0xeb, 0xfe,                               // loop
+    ];
+    let mut code_a = [0u8; 128];
+    unsafe {
+        core::ptr::copy_nonoverlapping(exec_logic.as_ptr(), code_a.as_mut_ptr(), exec_logic.len());
+        core::ptr::copy_nonoverlapping(b"/bin/app\0".as_ptr(), code_a.as_mut_ptr().add(exec_logic.len()), 9);
+    }
+
+    process::process::spawn_user_task(user_code_virt, user_stack_top, x86_64::VirtAddr::new(0x800000), &code_a);
     process::process::spawn_idle_task(x86_64::VirtAddr::new(0x900000), x86_64::PhysAddr::new(kernel_pml4_phys));
 
     println!("Wraith Core: System fully initialized.");
