@@ -1,5 +1,6 @@
 use x86_64::VirtAddr;
 use crate::user::context::ProcessContext;
+use crate::process::memory_space::MemorySpace;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
@@ -15,10 +16,11 @@ pub struct Task {
     pub state: TaskState,
     pub time_slice: u64,
     pub sleep_ticks: u64,
+    pub memory: MemorySpace,
 }
 
 impl Task {
-    pub fn new(id: u64, kernel_stack_top: VirtAddr) -> Self {
+    pub fn new(id: u64, kernel_stack_top: VirtAddr, memory: MemorySpace) -> Self {
         Self {
             id,
             context: ProcessContext::default(),
@@ -26,6 +28,7 @@ impl Task {
             state: TaskState::Ready,
             time_slice: 10,
             sleep_ticks: 0,
+            memory,
         }
     }
 }

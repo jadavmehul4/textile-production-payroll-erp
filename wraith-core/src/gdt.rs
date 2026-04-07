@@ -7,7 +7,7 @@ pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
 lazy_static! {
     /// Task State Segment (TSS) for handling safe interrupt stacks and privilege level switching.
-    static ref TSS: TaskStateSegment = {
+    pub static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
             const STACK_SIZE: usize = 4096 * 5;
@@ -17,20 +17,19 @@ lazy_static! {
             let stack_end = stack_start + STACK_SIZE;
             stack_end
         };
-        // RSP0 is used when switching from Ring 3 to Ring 0 (e.g. on interrupt or syscall)
-        tss.privilege_stack_table[0] = {
-            const STACK_SIZE: usize = 4096 * 5;
-            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-            let stack_start = VirtAddr::from_ptr(unsafe { core::ptr::addr_of!(STACK) });
-            let stack_end = stack_start + STACK_SIZE;
-            stack_end
-        };
+        // privilege_stack_table[0] is used on Ring 3 -> Ring 0 transitions (interrupts)
+        // Note: Syscalls use a different mechanism (LSTAR/GS) but can also use TSS.
         tss
     };
 }
 
 lazy_static! {
     /// Global Descriptor Table (GDT) defining kernel and user segments.
+    /// Order is CRITICAL for syscall/sysret:
+    /// 1. Kernel Code
+    /// 2. Kernel Data
+    /// 3. User Data
+    /// 4. User Code
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
@@ -63,20 +62,14 @@ pub fn get_selectors() -> &'static Selectors {
 /// Initialize GDT and TSS using raw assembly for segment register loading.
 pub fn init() {
     use x86_64::instructions::tables::load_tss;
-    use x86_64::instructions::segmentation::{CS, DS, ES, FS, GS, SS, Segment};
+    use x86_64::instructions::segmentation::{CS, DS, ES, SS, Segment};
 
     GDT.0.load();
     unsafe {
-        // Load Kernel Segments
         CS::set_reg(GDT.1.kernel_code_selector);
         DS::set_reg(GDT.1.kernel_data_selector);
         ES::set_reg(GDT.1.kernel_data_selector);
         SS::set_reg(GDT.1.kernel_data_selector);
-
-        // FS and GS are used for thread-local storage, zero them for now
-        FS::set_reg(SegmentSelector(0));
-        GS::set_reg(SegmentSelector(0));
-
         load_tss(GDT.1.tss_selector);
     }
 }

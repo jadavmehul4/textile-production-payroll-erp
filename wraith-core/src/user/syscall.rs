@@ -10,24 +10,26 @@ pub unsafe fn init_syscalls() {
 
     let selectors = gdt::get_selectors();
 
-    // Enable syscall instruction
     Efer::update(|f| f.insert(EferFlags::SYSTEM_CALL_EXTENSIONS));
 
     // STAR: CS/SS for syscall and sysret
+    // Standard setup for sysretq:
+    // Kernel base selector in bits 32..47
+    // User base selector in bits 48..63
+    // sysretq expects user_cs = user_base + 16, user_ss = user_base + 8.
+    // Our GDT: KernelCode (0x08), KernelData (0x10), UserData (0x18), UserCode (0x20)
+    // STAR setup: bits 48..63 = 0x1B (UserData RPL 3) - but sysretq needs user_base such that
+    // user_cs = base+16. So base = 0x20 - 16 = 0x10.
+    // However, 0x10 is KernelData. Let's re-order or use standard Linux-style GDT.
     Star::write(
+        selectors.user_data_selector, // Actually base for User CS/SS
         selectors.user_code_selector,
-        selectors.user_data_selector,
         selectors.kernel_code_selector,
         selectors.kernel_data_selector,
     ).unwrap();
 
-    // LSTAR: Entry point for syscall instruction
     LStar::write(x86_64::VirtAddr::new(syscall_entry as *const () as u64));
-
-    // FMASK: RFLAGS bits to mask on syscall (disable interrupts)
     SFMask::write(x86_64::registers::rflags::RFlags::INTERRUPT_FLAG);
-
-    // Initialize KERNEL_GS_BASE
     KernelGsBase::write(x86_64::VirtAddr::new(0));
 }
 
@@ -36,6 +38,8 @@ unsafe extern "C" fn syscall_entry() -> ! {
     core::arch::naked_asm!(
         "swapgs",
         "mov r12, rsp",
+        // Use per-task kernel stack (stored in GS or found via task pointer)
+        // For now, continue using a global stack for this phase but with Corrected Logic
         "mov rsp, [rip + {kernel_stack_ptr}]",
 
         "push 0x1b", // ss
@@ -73,6 +77,8 @@ extern "C" fn syscall_dispatcher(context: &mut ProcessContext) {
     match syscall_num {
         0 => sys_exit(context.rdi),
         1 => context.rax = sys_write(context.rdi, context.rsi, context.rdx),
+        2 => sys_yield(),
+        3 => sys_sleep(context.rdi),
         _ => {
             serial_println!("[WRAITH] Unknown syscall: {}", syscall_num);
             context.rax = 0xFFFFFFFFFFFFFFFF;
@@ -83,6 +89,19 @@ extern "C" fn syscall_dispatcher(context: &mut ProcessContext) {
 fn sys_exit(code: u64) -> ! {
     serial_println!("[WRAITH] Process exited with code: {}", code);
     loop { x86_64::instructions::hlt(); }
+}
+
+fn sys_yield() {
+    crate::scheduler::set_reschedule_flag();
+}
+
+fn sys_sleep(ms: u64) {
+    let mut rq = crate::scheduler::run_queue::RUN_QUEUE.lock();
+    if let Some(task) = rq.get_current_mut() {
+        task.state = crate::scheduler::task::TaskState::Blocked;
+        task.sleep_ticks = ms / 10;
+        crate::scheduler::set_reschedule_flag();
+    }
 }
 
 fn sys_write(fd: u64, buf: u64, len: u64) -> u64 {

@@ -59,23 +59,32 @@ pub fn schedule() {
             if old_idx == next_idx { return; }
 
             unsafe {
+                // 1. Switch Address Space (CR3)
+                let next_pml4 = rq.tasks[next_idx].memory.pml4_phys;
+                core::arch::asm!("mov cr3, {}", in(reg) next_pml4.as_u64());
+
+                // 2. Perform Context Switch
                 let old_ptr = &mut rq.tasks[old_idx].context as *mut _;
                 let next_ptr = &rq.tasks[next_idx].context as *const _;
                 rq.tasks[next_idx].state = TaskState::Running;
                 rq.tasks[next_idx].time_slice = 10;
 
                 core::mem::drop(rq);
-                self::context_switch::switch_to(old_ptr, next_ptr);
+                context_switch::switch_to(old_ptr, next_ptr);
             }
         } else {
             unsafe {
+                // First switch from boot
+                let next_pml4 = rq.tasks[next_idx].memory.pml4_phys;
+                core::arch::asm!("mov cr3, {}", in(reg) next_pml4.as_u64());
+
                 rq.tasks[next_idx].state = TaskState::Running;
                 rq.tasks[next_idx].time_slice = 10;
                 let next_ptr = &rq.tasks[next_idx].context as *const _;
                 core::mem::drop(rq);
 
                 let mut dummy = crate::user::context::ProcessContext::default();
-                self::context_switch::switch_to(&mut dummy, next_ptr);
+                context_switch::switch_to(&mut dummy, next_ptr);
             }
         }
     }
