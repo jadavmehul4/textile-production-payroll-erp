@@ -6,14 +6,22 @@ use lazy_static::lazy_static;
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
 lazy_static! {
-    /// Task State Segment (TSS) for handling safe interrupt stacks.
+    /// Task State Segment (TSS) for handling safe interrupt stacks and privilege level switching.
     static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
             const STACK_SIZE: usize = 4096 * 5;
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
-            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK));
+            let stack_start = VirtAddr::from_ptr(unsafe { core::ptr::addr_of!(STACK) });
+            let stack_end = stack_start + STACK_SIZE;
+            stack_end
+        };
+        // RSP0 is used when switching from Ring 3 to Ring 0 (e.g. on interrupt or syscall)
+        tss.privilege_stack_table[0] = {
+            const STACK_SIZE: usize = 4096 * 5;
+            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+            let stack_start = VirtAddr::from_ptr(unsafe { core::ptr::addr_of!(STACK) });
             let stack_end = stack_start + STACK_SIZE;
             stack_end
         };
@@ -22,38 +30,53 @@ lazy_static! {
 }
 
 lazy_static! {
-    /// Global Descriptor Table (GDT) defining kernel segments.
+    /// Global Descriptor Table (GDT) defining kernel and user segments.
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
-        let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
+        let kernel_code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
+        let kernel_data_selector = gdt.add_entry(Descriptor::kernel_data_segment());
+        let user_data_selector = gdt.add_entry(Descriptor::user_data_segment());
+        let user_code_selector = gdt.add_entry(Descriptor::user_code_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
-        (gdt, Selectors { code_selector, tss_selector })
+        (gdt, Selectors {
+            kernel_code_selector,
+            kernel_data_selector,
+            user_code_selector,
+            user_data_selector,
+            tss_selector
+        })
     };
 }
 
-struct Selectors {
-    code_selector: SegmentSelector,
-    tss_selector: SegmentSelector,
+pub struct Selectors {
+    pub kernel_code_selector: SegmentSelector,
+    pub kernel_data_selector: SegmentSelector,
+    pub user_code_selector: SegmentSelector,
+    pub user_data_selector: SegmentSelector,
+    pub tss_selector: SegmentSelector,
+}
+
+pub fn get_selectors() -> &'static Selectors {
+    &GDT.1
 }
 
 /// Initialize GDT and TSS using raw assembly for segment register loading.
 pub fn init() {
     use x86_64::instructions::tables::load_tss;
-    use x86_64::instructions::segmentation::{CS, Segment};
+    use x86_64::instructions::segmentation::{CS, DS, ES, FS, GS, SS, Segment};
 
     GDT.0.load();
     unsafe {
-        // Raw assembly to load segment registers (Intel syntax: mov dst, src)
-        // We set data segments to 0 as they are mostly ignored in 64-bit mode.
-        core::arch::asm!(
-            "mov ds, {0:x}",
-            "mov es, {0:x}",
-            "mov fs, {0:x}",
-            "mov gs, {0:x}",
-            "mov ss, {0:x}",
-            in(reg) 0u16,
-        );
-        CS::set_reg(GDT.1.code_selector);
+        // Load Kernel Segments
+        CS::set_reg(GDT.1.kernel_code_selector);
+        DS::set_reg(GDT.1.kernel_data_selector);
+        ES::set_reg(GDT.1.kernel_data_selector);
+        SS::set_reg(GDT.1.kernel_data_selector);
+
+        // FS and GS are used for thread-local storage, zero them for now
+        FS::set_reg(SegmentSelector(0));
+        GS::set_reg(SegmentSelector(0));
+
         load_tss(GDT.1.tss_selector);
     }
 }

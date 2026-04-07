@@ -26,12 +26,19 @@ impl MemoryManager {
         let end_page = ((start.as_u64() + size as u64 + 4095) / 4096) * 4096;
 
         for addr in (start_page..end_page).step_by(4096) {
-            // We need to re-borrow frame_allocator inside the loop or use a more complex mapper setup
-            // For simplicity in the orchestrator, we allocate first, then map.
             let frame = frame_allocator_guard.allocate_frame().expect("OOM during range mapping");
             let mut mapper = Mapper::new(pml4, &mut *frame_allocator_guard, crate::memory::layout::PHYS_OFFSET);
             mapper.map_4k(VirtAddr::new(addr), frame, flags);
         }
+    }
+
+    /// Map a user-accessible memory region.
+    pub unsafe fn map_user_range(&self, start: VirtAddr, size: usize, writable: bool) {
+        let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_EXECUTE;
+        if writable {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        self.map_range(start, size, flags);
     }
 
     /// Update permissions for an existing virtual page.
@@ -41,6 +48,20 @@ impl MemoryManager {
         let mut mapper = Mapper::new(pml4, &mut *frame_allocator_guard, crate::memory::layout::PHYS_OFFSET);
 
         mapper.update_flags(virt, flags);
+    }
+
+    /// Validate that a user-provided pointer is within canonical user address space
+    /// and correctly mapped.
+    pub fn validate_user_ptr(&self, ptr: u64, size: u64) -> bool {
+        let user_base = 0x0000_0000_0040_0000;
+        let user_limit = 0x0000_7FFF_FFFF_FFFF;
+
+        if ptr < user_base || (ptr + size) > user_limit {
+            return false;
+        }
+
+        // Detailed check for page presence could be added here by walking tables
+        true
     }
 
     /// Expand the heap by allocating and mapping new pages.

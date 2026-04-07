@@ -36,6 +36,9 @@ pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u
     let pml4 = &mut *pml4_virt.as_mut_ptr::<PageTable>();
     pml4.zero();
 
+    // Identify total physical memory before creating mapper
+    let total_phys_memory = frame_allocator.total_frames() as u64 * 4096;
+
     let mut mapper = Mapper::new(pml4, frame_allocator, current_offset);
 
     // 3. Identity map critical regions (first 1MB) for continuity during switch
@@ -68,8 +71,10 @@ pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u
     );
 
     // 6. Map the full physical memory to the NEW HHDM region (PHYS_OFFSET)
-    for i in 0..512 {
-        let addr = i * 2 * 1024 * 1024;
+    let gigabyte = 1024 * 1024 * 1024;
+    let map_limit = total_phys_memory.max(gigabyte); // Map at least 1GB
+
+    for addr in (0..map_limit).step_by(2 * 1024 * 1024) {
         mapper.map_2m(
             VirtAddr::new(addr + self::mapper::PHYS_OFFSET),
             PhysAddr::new(addr),

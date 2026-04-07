@@ -2,6 +2,7 @@ use volatile::Volatile;
 use core::fmt;
 use spin::Mutex;
 use lazy_static::lazy_static;
+use crate::memory::layout::MMIO_BASE;
 
 /// Standard VGA colors.
 #[allow(dead_code)]
@@ -48,7 +49,7 @@ struct ScreenChar {
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
-/// The VGA text buffer at 0xb8000.
+/// The VGA text buffer.
 #[repr(transparent)]
 struct Buffer {
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
@@ -125,10 +126,20 @@ impl fmt::Write for Writer {
 
 lazy_static! {
     /// Global instance for the VGA writer.
+    /// Uses identity-mapped 0xb8000 for early boot, but we can update to MMIO_BASE.
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
         color_code: ColorCode::new(Color::LightGray, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+    });
+}
+
+/// Relocate VGA buffer to high-half MMIO region.
+pub unsafe fn relocate_to_mmio() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        let mut writer = WRITER.lock();
+        writer.buffer = &mut *(MMIO_BASE as *mut Buffer);
     });
 }
 
@@ -161,7 +172,6 @@ pub fn set_panic_color() {
     interrupts::without_interrupts(|| {
         let mut writer = WRITER.lock();
         writer.color_code = ColorCode::new(Color::White, Color::Red);
-        // Clear screen with red
         for row in 0..BUFFER_HEIGHT {
             writer.clear_row(row);
         }

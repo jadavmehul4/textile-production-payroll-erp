@@ -23,7 +23,7 @@ impl BitmapFrameAllocator {
         let total_frames = (total_memory / 4096) as usize;
         let bitmap_size = (total_frames + 7) / 8;
 
-        // Find a usable region to place the bitmap (below the kernel or elsewhere safe)
+        // Find a usable region to place the bitmap
         let bitmap_base = Self::find_bitmap_hole(memory_map, bitmap_size)
             .expect("Could not find a safe memory region for frame allocator bitmap");
 
@@ -41,8 +41,8 @@ impl BitmapFrameAllocator {
         allocator.mark_unusable_regions();
 
         // Mark the bitmap region itself as used
-        let bitmap_start_idx = (bitmap_base as usize / 4096);
-        let bitmap_end_idx = ((bitmap_base as usize + bitmap_size + 4095) / 4096);
+        let bitmap_start_idx = bitmap_base as usize / 4096;
+        let bitmap_end_idx = (bitmap_base as usize + bitmap_size + 4095) / 4096;
         for i in bitmap_start_idx..bitmap_end_idx {
             allocator.set_bit(i, true);
         }
@@ -50,19 +50,18 @@ impl BitmapFrameAllocator {
         allocator
     }
 
+    pub fn total_frames(&self) -> usize {
+        self.total_frames
+    }
+
     /// Find a hole in physical memory that is large enough for the bitmap.
-    /// Avoids 0x0..0x100000 (BIOS/VGA) and kernel region.
     fn find_bitmap_hole(memory_map: &MemoryMap, size: usize) -> Option<*mut u8> {
         for region in memory_map.iter() {
             if region.region_type == MemoryRegionType::Usable {
                 let start = region.range.start_addr();
                 let end = region.range.end_addr();
 
-                // Skip low memory (first 1MB)
                 let search_start = start.max(0x100000);
-
-                // Also ensure we don't overlap the kernel (assume kernel is < 8MB for now)
-                // In a production kernel, we would use linker symbols to find kernel physical range.
                 let search_start = search_start.max(0x800000);
 
                 if end > search_start && (end - search_start) >= size as u64 {
