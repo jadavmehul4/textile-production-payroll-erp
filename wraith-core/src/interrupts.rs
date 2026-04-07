@@ -2,6 +2,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::{println, serial_println};
 use lazy_static::lazy_static;
 use crate::gdt;
+use crate::memory::paging;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -41,13 +42,23 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
 
+    let fault_addr = Cr2::read();
     serial_println!("EXCEPTION: PAGE FAULT");
-    serial_println!("Accessed Address: {:?}", Cr2::read());
+    serial_println!("Accessed Address: {:?}", fault_addr);
     serial_println!("Error Code: {:?}", error_code);
     serial_println!("{:#?}", stack_frame);
 
+    // Guard Page Detection
+    if paging::is_guard_page_violation(fault_addr.as_u64()) {
+         serial_println!("[WRAITH ALERT] STACK OVERRUN DETECTED (Guard Page Access)");
+         println!("[WRAITH ALERT] STACK OVERRUN DETECTED (Guard Page Access)");
+    } else if fault_addr.as_u64() < 0x1000 {
+         serial_println!("[WRAITH ALERT] CRITICAL NULL POINTER ACCESS");
+         println!("[WRAITH ALERT] CRITICAL NULL POINTER ACCESS");
+    }
+
     println!("EXCEPTION: PAGE FAULT");
-    println!("Accessed Address: {:?}", Cr2::read());
+    println!("Accessed Address: {:?}", fault_addr);
 
     panic!("PAGE FAULT CANNOT BE RECOVERED AT THIS STAGE");
 }
