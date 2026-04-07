@@ -8,6 +8,19 @@ use self::page_table::PageTable;
 use self::mapper::Mapper;
 use self::flags::PageTableFlags;
 
+// Linker symbols
+extern "C" {
+    static _text_start: usize;
+    static _text_end: usize;
+    static _rodata_start: usize;
+    static _rodata_end: usize;
+    static _data_start: usize;
+    static _data_end: usize;
+    static _bss_start: usize;
+    static _bss_end: usize;
+    static _kernel_phys_base: usize;
+}
+
 /// Initialize the 4-level paging system.
 /// Accepts the physical memory offset provided by the bootloader for bootstrapping.
 pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u64) {
@@ -25,9 +38,8 @@ pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u
 
     let mut mapper = Mapper::new(pml4, frame_allocator, current_offset);
 
-    // 3. Identity map critical early-boot regions (first 1MB)
-    // VGA (0xb8000), Serial (0x3F8), and Kernel text/data
-    for i in 0..1024 { // Map 4MB to cover common kernel/stack identity mappings
+    // 3. Identity map critical regions (first 1MB) for continuity during switch
+    for i in 0..256 {
         let addr = i * 4096;
         mapper.map_4k(
             VirtAddr::new(addr),
@@ -36,8 +48,26 @@ pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u
         );
     }
 
-    // 4. Map the full physical memory to the NEW HHDM region (PHYS_OFFSET)
-    // Map the first 1GB as 2MB huge pages for the high-half
+    // 4. Map Kernel Sections into HIGH HALF (0xffffffff80000000)
+    let phys_base = &_kernel_phys_base as *const usize as u64;
+
+    // TEXT → RX
+    map_section_high(&mut mapper, &_text_start, &_text_end, phys_base, PageTableFlags::PRESENT);
+
+    // RODATA → R
+    map_section_high(&mut mapper, &_rodata_start, &_rodata_end, phys_base, PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE);
+
+    // DATA/BSS → RW
+    map_section_high(&mut mapper, &_data_start, &_bss_end, phys_base, PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE);
+
+    // 5. Map MMIO regions at dedicated high addresses
+    mapper.map_4k(
+        VirtAddr::new(crate::memory::layout::MMIO_BASE),
+        PhysAddr::new(0xb8000),
+        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE
+    );
+
+    // 6. Map the full physical memory to the NEW HHDM region (PHYS_OFFSET)
     for i in 0..512 {
         let addr = i * 2 * 1024 * 1024;
         mapper.map_2m(
@@ -47,7 +77,7 @@ pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u
         );
     }
 
-    // 5. Explicitly map the current stack region in the new tables to ensure continuity
+    // 7. Map the current stack region in the new tables
     let mut rsp: u64;
     core::arch::asm!("mov {}, rsp", out(reg) rsp);
     let stack_page_start = rsp & !0xFFF;
@@ -60,16 +90,26 @@ pub unsafe fn init(frame_allocator: &mut BitmapFrameAllocator, current_offset: u
             mapper.map_4k(
                 VirtAddr::new(addr_virt),
                 PhysAddr::new(addr_phys),
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE
             );
         }
-
-        // Guard Page: 1 page below the stack
         GUARD_PAGE_START = stack_page_start - (17 * 4096);
     }
 
-    // 6. Switch to the new page tables by loading CR3
+    // 8. Switch to the new page tables by loading CR3
     load_cr3(pml4_frame);
+}
+
+/// Helper to map a high-half linker section with specific flags.
+unsafe fn map_section_high(mapper: &mut Mapper, start: &usize, end: &usize, phys_base: u64, flags: PageTableFlags) {
+    let start_virt = start as *const usize as u64;
+    let end_virt = end as *const usize as u64;
+    let virt_base = 0xffffffff80000000;
+
+    for virt_addr in (start_virt..end_virt).step_by(4096) {
+        let phys_addr = phys_base + (virt_addr - virt_base);
+        mapper.map_4k(VirtAddr::new(virt_addr), PhysAddr::new(phys_addr), flags);
+    }
 }
 
 static mut GUARD_PAGE_START: u64 = 0;

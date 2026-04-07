@@ -40,47 +40,54 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 4. Initialize Paging and Physical Frame Allocator
     serial_println!("Wraith Core: Initializing Paging System...");
 
-    // We use the bootloader-provided offset for bootstrapping our new page tables.
     let boot_offset = boot_info.physical_memory_offset;
 
-    // Use a fixed address for the frame allocator bitmap within the identity-mapped 1MB
-    // 0x90000 (around 576KB) is generally safe in standard x86 BIOS memory maps
-    let bitmap_base = 0x90000 as *mut u8;
-
     unsafe {
+        // Dynamic bitmap hole discovery enabled
         let mut frame_allocator = memory::frame_allocator::BitmapFrameAllocator::init(
-            &boot_info.memory_map,
-            bitmap_base
+            &boot_info.memory_map
         );
-        // Initialize our new 4-level paging with HHDM
+
+        // Initialize our new 4-level paging with HHDM, High-Half Kernel, and W^X enforcement
         memory::paging::init(&mut frame_allocator, boot_offset);
+
+        // Use the newly established HHDM VirtAddr for the PML4 in MemoryManager
+        let pml4_phys: u64;
+        core::arch::asm!("mov {}, cr3", out(reg) pml4_phys);
+        let pml4_virt = x86_64::VirtAddr::new((pml4_phys & !0xFFF) + memory::layout::PHYS_OFFSET);
+
+        // Initialize MemoryManager with the static frame allocator
+        static mut GLOBAL_FRAME_ALLOCATOR: Option<spin::Mutex<memory::frame_allocator::BitmapFrameAllocator>> = None;
+        GLOBAL_FRAME_ALLOCATOR = Some(spin::Mutex::new(frame_allocator));
+
+        memory::manager::init(pml4_virt, GLOBAL_FRAME_ALLOCATOR.as_ref().unwrap());
     }
 
     serial_println!("Wraith Core: Paging & HHDM Initialized.");
 
-    // 5. Initialize the global allocator with the secure heap region
+    // 5. Initialize the global allocator with the initial heap range
     unsafe {
-        let start = core::ptr::addr_of!(_secure_heap_start) as usize;
-        let end = core::ptr::addr_of!(_secure_heap_end) as usize;
-        let size = end - start;
-        memory::allocator::ALLOCATOR.lock().init(start, size);
+        // Map initial heap range
+        if let Some(ref mm) = *memory::manager::MEMORY_MANAGER.lock() {
+            mm.expand_heap(
+                x86_64::VirtAddr::new(memory::layout::HEAP_START),
+                memory::layout::HEAP_INITIAL_SIZE
+            );
+        }
+
+        memory::allocator::ALLOCATOR.lock().init(
+            memory::layout::HEAP_START as usize,
+            memory::layout::HEAP_INITIAL_SIZE
+        );
     }
-    serial_println!("Wraith Core: Memory Allocator Initialized.");
+    serial_println!("Wraith Core: Heap Allocator Initialized.");
 
     println!("Wraith Core: System initialized successfully.");
     serial_println!("Wraith Core: Fully initialized.");
 
-    // 6. Verification: Access HHDM address
-    let hhdm_vga_ptr = (0xb8000 + memory::paging::mapper::PHYS_OFFSET) as *mut u16;
-    unsafe {
-        *hhdm_vga_ptr = 0x0f41; // 'A' with White-on-Black at (0,0) in HHDM
-    }
-    serial_println!("Wraith Core: HHDM Access Verification Successful.");
-
-    // 7. Verification: Run a stealth check (Instruction Overlapping and MMU check)
-    serial_println!("Wraith Core: Verifying Stealth Engine...");
-    let cr3 = security::stealth::StealthEngine::monitor_mmu();
-    serial_println!("Wraith Core: CR3 State: 0x{:x}", cr3);
+    // 6. Verification: Dynamic Allocation
+    let test_box = alloc::boxed::Box::new(42u64);
+    serial_println!("Wraith Core: Dynamic Allocation Successful (Value: {} at {:p})", *test_box, test_box);
 
     // Trigger a test breakpoint exception to verify IDT
     serial_println!("Wraith Core: Testing Breakpoint...");
@@ -89,6 +96,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     loop {}
 }
+
+extern crate alloc;
 
 /// Custom panic handler for bare-metal environment.
 /// Implements the "Wraith Screen of Death".

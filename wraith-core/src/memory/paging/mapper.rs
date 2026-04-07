@@ -37,6 +37,26 @@ impl<'a> Mapper<'a> {
         entry.set_flags(flags | PageTableFlags::PRESENT);
     }
 
+    /// Update flags for an existing page.
+    pub unsafe fn update_flags(&mut self, virt: VirtAddr, flags: PageTableFlags) {
+        let p3_ptr = Self::get_next_table_static(self.p4, virt.p4_index(), self.current_offset);
+        if p3_ptr.is_none() { return; }
+
+        let p2_ptr = Self::get_next_table_static(&mut *p3_ptr.unwrap(), virt.p3_index(), self.current_offset);
+        if p2_ptr.is_none() { return; }
+
+        let p1_ptr = Self::get_next_table_static(&mut *p2_ptr.unwrap(), virt.p2_index(), self.current_offset);
+        if p1_ptr.is_none() { return; }
+
+        let p1 = &mut *p1_ptr.unwrap();
+        let entry = &mut p1[usize::from(virt.p1_index())];
+
+        entry.set_flags(flags | PageTableFlags::PRESENT);
+
+        // Flush TLB for the updated page
+        self::flush_tlb(virt);
+    }
+
     /// Map a 2MB virtual page to a physical frame.
     pub unsafe fn map_2m(&mut self, virt: VirtAddr, phys: PhysAddr, flags: PageTableFlags) {
         let p3_ptr = Self::create_next_table_static(self.p4, virt.p4_index(), self.frame_allocator, self.current_offset);
@@ -67,4 +87,28 @@ impl<'a> Mapper<'a> {
 
         phys_to_virt_with_offset(PhysAddr::new(entry.addr()), current_offset).as_mut_ptr()
     }
+
+    /// Helper to navigate existing page tables.
+    unsafe fn get_next_table_static(table: &mut PageTable, index: x86_64::structures::paging::PageTableIndex, current_offset: u64) -> Option<*mut PageTable> {
+        let entry = &mut table[usize::from(index)];
+        if entry.is_unused() { return None; }
+        Some(phys_to_virt_with_offset(PhysAddr::new(entry.addr()), current_offset).as_mut_ptr())
+    }
+}
+
+/// Flush the TLB for a single page.
+pub unsafe fn flush_tlb(virt: VirtAddr) {
+    core::arch::asm!(
+        "invlpg [{}]",
+        in(reg) virt.as_u64(),
+    );
+}
+
+/// Full TLB flush by reloading CR3.
+pub unsafe fn full_tlb_flush() {
+    core::arch::asm!(
+        "mov rax, cr3",
+        "mov cr3, rax",
+        out("rax") _,
+    );
 }

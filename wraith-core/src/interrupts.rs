@@ -48,6 +48,13 @@ extern "x86-interrupt" fn page_fault_handler(
     serial_println!("Error Code: {:?}", error_code);
     serial_println!("{:#?}", stack_frame);
 
+    // W^X Policy Violation Detection
+    if error_code.contains(PageFaultErrorCode::INSTRUCTION_FETCH) &&
+       error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION) {
+        serial_println!("[WRAITH SECURITY] W^X VIOLATION: Execution attempted on NX page!");
+        println!("[WRAITH SECURITY] W^X VIOLATION: Execution attempted on NX page!");
+    }
+
     // Guard Page Detection
     if paging::is_guard_page_violation(fault_addr.as_u64()) {
          serial_println!("[WRAITH ALERT] STACK OVERRUN DETECTED (Guard Page Access)");
