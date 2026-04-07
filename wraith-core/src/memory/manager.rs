@@ -7,7 +7,7 @@ use crate::process::memory_space::MemorySpace;
 
 /// MemoryManager acts as the primary orchestrator between the Frame Allocator and Mapper.
 pub struct MemoryManager {
-    frame_allocator: &'static Mutex<BitmapFrameAllocator>,
+    pub frame_allocator: &'static Mutex<BitmapFrameAllocator>,
     // The master kernel PML4 (physical address)
     kernel_pml4: PhysAddr,
 }
@@ -40,17 +40,17 @@ impl MemoryManager {
 
     /// Map a user-accessible region within a specific memory space.
     pub unsafe fn map_user_region(&self, space: &mut MemorySpace, start: VirtAddr, size: usize, flags: PageTableFlags) {
-        let pml4_virt = crate::memory::paging::mapper::phys_to_virt_with_offset(space.pml4_phys, crate::memory::layout::PHYS_OFFSET);
-        let pml4 = &mut *pml4_virt.as_mut_ptr::<crate::memory::paging::page_table::PageTable>();
-
         let start_page = (start.as_u64() / 4096) * 4096;
         let end_page = ((start.as_u64() + size as u64 + 4095) / 4096) * 4096;
         let user_flags = flags | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::PRESENT;
 
+        let mut frame_allocator_guard = self.frame_allocator.lock();
+        let pml4_virt = crate::memory::paging::mapper::phys_to_virt_with_offset(space.pml4_phys, crate::memory::layout::PHYS_OFFSET);
+        let pml4 = &mut *pml4_virt.as_mut_ptr::<crate::memory::paging::page_table::PageTable>();
+
         for addr in (start_page..end_page).step_by(4096) {
-            let mut frame_allocator = self.frame_allocator.lock();
-            let frame = frame_allocator.allocate_frame().expect("OOM during user mapping");
-            let mut mapper = Mapper::new(pml4, &mut *frame_allocator, crate::memory::layout::PHYS_OFFSET);
+            let frame = frame_allocator_guard.allocate_frame().expect("OOM during user mapping");
+            let mut mapper = Mapper::new(pml4, &mut *frame_allocator_guard, crate::memory::layout::PHYS_OFFSET);
             mapper.map_4k(VirtAddr::new(addr), frame, user_flags);
         }
 
@@ -59,16 +59,16 @@ impl MemoryManager {
 
     /// Allocate physical frames and map them to a virtual range (Kernel/Global).
     pub unsafe fn map_range(&self, start: VirtAddr, size: usize, flags: PageTableFlags) {
-        let pml4_virt = crate::memory::paging::mapper::phys_to_virt_with_offset(self.kernel_pml4, crate::memory::layout::PHYS_OFFSET);
-        let pml4 = &mut *pml4_virt.as_mut_ptr::<crate::memory::paging::page_table::PageTable>();
-
         let start_page = (start.as_u64() / 4096) * 4096;
         let end_page = ((start.as_u64() + size as u64 + 4095) / 4096) * 4096;
 
+        let mut frame_allocator_guard = self.frame_allocator.lock();
+        let pml4_virt = crate::memory::paging::mapper::phys_to_virt_with_offset(self.kernel_pml4, crate::memory::layout::PHYS_OFFSET);
+        let pml4 = &mut *pml4_virt.as_mut_ptr::<crate::memory::paging::page_table::PageTable>();
+
         for addr in (start_page..end_page).step_by(4096) {
-            let mut frame_allocator = self.frame_allocator.lock();
-            let frame = frame_allocator.allocate_frame().expect("OOM during range mapping");
-            let mut mapper = Mapper::new(pml4, &mut *frame_allocator, crate::memory::layout::PHYS_OFFSET);
+            let frame = frame_allocator_guard.allocate_frame().expect("OOM during range mapping");
+            let mut mapper = Mapper::new(pml4, &mut *frame_allocator_guard, crate::memory::layout::PHYS_OFFSET);
             mapper.map_4k(VirtAddr::new(addr), frame, flags);
         }
     }

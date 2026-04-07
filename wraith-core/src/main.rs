@@ -16,6 +16,7 @@ pub mod interrupts;
 pub mod user;
 pub mod scheduler;
 pub mod process;
+pub mod elf;
 
 // Import linker symbols for allocator initialization
 extern "C" {
@@ -100,32 +101,35 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
     serial_println!("Wraith Core: LAPIC Timer Initialized.");
 
-    // 9. Create Isolated Tasks
-    let user_code_a = x86_64::VirtAddr::new(0x0000_0000_0040_0000);
-    let user_stack_top = x86_64::VirtAddr::new(0x0000_7FFF_FFFF_F000);
+    // 9. Load and execute User Process from ELF
+    serial_println!("Wraith Core: Loading User Process (ELF)...");
 
-    // Prepare code for Task A
-    let task_logic = [
-        0x48, 0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, // mov rax, 1 (write)
-        0x48, 0xc7, 0xc7, 0x01, 0x00, 0x00, 0x00, // mov rdi, 1
-        0x48, 0x8d, 0x35, 0x0c, 0x00, 0x00, 0x00, // lea rsi, [rip+12]
-        0x48, 0xc7, 0xc2, 0x06, 0x00, 0x00, 0x00, // mov rdx, 6
-        0x0f, 0x05,                               // syscall
-        0x48, 0xc7, 0xc0, 0x02, 0x00, 0x00, 0x00, // mov rax, 2 (yield)
-        0x0f, 0x05,                               // syscall
-        0xeb, 0xd9                                // jmp back
+    // Minimal mock ELF image for testing (Valid ELF header for x86_64)
+    // In a real scenario, this would be include_bytes!("path/to/binary")
+    let mock_elf: [u8; 120] = [
+        0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, // Magic, Class 64, Little Endian
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x02, 0x00, 0x3e, 0x00, 0x01, 0x00, 0x00, 0x00, // Executable, x86_64
+        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Entry point: 0x400000
+        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // PH offset: 64
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x38, 0x00, // Header size, PH entry size
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // PH count: 1
+
+        // Program Header (PT_LOAD)
+        0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, // PT_LOAD, PF_R | PF_X
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Offset: 0
+        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // VAddr: 0x400000
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // File size: 120
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Mem size: 4096 (triggers BSS zeroing)
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Align: 4KB
     ];
-    let mut code_a = [0u8; 64];
-    unsafe {
-        core::ptr::copy_nonoverlapping(task_logic.as_ptr(), code_a.as_mut_ptr(), task_logic.len());
-        core::ptr::copy_nonoverlapping(b"Task A".as_ptr(), code_a.as_mut_ptr().add(task_logic.len()), 6);
-    }
 
-    process::process::spawn_user_task(user_code_a, user_stack_top, x86_64::VirtAddr::new(0x800000), &code_a);
-
+    process::process::spawn_elf_process(&mock_elf, x86_64::VirtAddr::new(0x800000));
     process::process::spawn_idle_task(x86_64::VirtAddr::new(0x900000), x86_64::PhysAddr::new(kernel_pml4_phys));
 
-    println!("Wraith Core: Process Isolation active.");
+    println!("Wraith Core: ELF Processes loaded.");
     serial_println!("Wraith Core: System fully initialized.");
 
     x86_64::instructions::interrupts::enable();

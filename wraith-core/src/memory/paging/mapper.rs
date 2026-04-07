@@ -4,7 +4,6 @@ use crate::memory::paging::flags::PageTableFlags;
 use crate::memory::frame_allocator::BitmapFrameAllocator;
 
 /// Fixed high virtual base for High-Half Direct Mapping (HHDM).
-/// This is our desired offset for the new page tables.
 pub const PHYS_OFFSET: u64 = 0xffff_8000_0000_0000;
 
 /// Convert a physical address to a virtual address using a specific offset.
@@ -16,7 +15,7 @@ pub fn phys_to_virt_with_offset(phys: PhysAddr, offset: u64) -> VirtAddr {
 pub struct Mapper<'a> {
     p4: &'a mut PageTable,
     frame_allocator: &'a mut BitmapFrameAllocator,
-    current_offset: u64, // The offset currently usable by the CPU to access physical memory
+    current_offset: u64,
 }
 
 impl<'a> Mapper<'a> {
@@ -24,8 +23,8 @@ impl<'a> Mapper<'a> {
         Self { p4, frame_allocator, current_offset }
     }
 
-    /// Map a 4KB virtual page to a physical frame.
-    pub unsafe fn map_4k(&mut self, virt: VirtAddr, phys: PhysAddr, flags: PageTableFlags) {
+    /// Map a 4KB virtual page to a physical frame. Returns the physical address.
+    pub unsafe fn map_4k(&mut self, virt: VirtAddr, phys: PhysAddr, flags: PageTableFlags) -> PhysAddr {
         let p3_ptr = Self::create_next_table_static(self.p4, virt.p4_index(), self.frame_allocator, self.current_offset);
         let p2_ptr = Self::create_next_table_static(&mut *p3_ptr, virt.p3_index(), self.frame_allocator, self.current_offset);
         let p1_ptr = Self::create_next_table_static(&mut *p2_ptr, virt.p2_index(), self.frame_allocator, self.current_offset);
@@ -35,6 +34,7 @@ impl<'a> Mapper<'a> {
 
         entry.set_addr(phys.as_u64());
         entry.set_flags(flags | PageTableFlags::PRESENT);
+        phys
     }
 
     /// Update flags for an existing page.
@@ -52,8 +52,6 @@ impl<'a> Mapper<'a> {
         let entry = &mut p1[usize::from(virt.p1_index())];
 
         entry.set_flags(flags | PageTableFlags::PRESENT);
-
-        // Flush TLB for the updated page
         self::flush_tlb(virt);
     }
 
