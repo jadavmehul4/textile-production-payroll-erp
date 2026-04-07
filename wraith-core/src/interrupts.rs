@@ -15,12 +15,25 @@ lazy_static! {
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
         idt.divide_error.set_handler_fn(divide_error_handler);
+
+        // Timer Interrupt (Local APIC)
+        idt[32].set_handler_fn(timer_interrupt_handler);
+
         idt
     };
 }
 
 pub fn init_idt() {
     IDT.load();
+}
+
+extern "x86-interrupt" fn timer_interrupt_handler(
+    _stack_frame: InterruptStackFrame)
+{
+    crate::scheduler::tick();
+    unsafe {
+        crate::scheduler::timer::send_eoi();
+    }
 }
 
 extern "x86-interrupt" fn breakpoint_handler(
@@ -47,13 +60,6 @@ extern "x86-interrupt" fn page_fault_handler(
     serial_println!("Accessed Address: {:?}", fault_addr);
     serial_println!("Error Code: {:?}", error_code);
     serial_println!("{:#?}", stack_frame);
-
-    // W^X Policy Violation Detection
-    if error_code.contains(PageFaultErrorCode::INSTRUCTION_FETCH) &&
-       error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION) {
-        serial_println!("[WRAITH SECURITY] W^X VIOLATION: Execution attempted on NX page!");
-        println!("[WRAITH SECURITY] W^X VIOLATION: Execution attempted on NX page!");
-    }
 
     // Guard Page Detection
     if paging::is_guard_page_violation(fault_addr.as_u64()) {
