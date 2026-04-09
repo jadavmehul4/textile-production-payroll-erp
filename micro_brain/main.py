@@ -3,18 +3,25 @@ from fastapi import FastAPI
 from micro_brain.core.event_bus import event_bus
 from micro_brain.voice.voice_listener import voice_listener
 from micro_brain.security.security_manager import security_manager
+from micro_brain.core.intent_engine import intent_engine
 
 async def handle_voice_command(data: dict):
     """
-    Handle incoming voice commands with security verification.
+    Handle incoming voice commands with security verification and intent parsing.
     """
     text = data.get("text", "").lower()
     print(f"[Main] Event Received: voice_command -> {text}")
 
-    # Determine security requirements
-    require_pin = any(keyword in text for keyword in ["delete", "transfer"])
+    # Parse intent
+    intent_data = intent_engine.parse(text)
+    print(f"[Main] INTENT: {intent_data}")
 
-    # Mock PIN for simulation if required (in production, this would be captured separately)
+    # Determine security requirements
+    # We now use the parsed intent to determine if PIN is required
+    sensitive_intents = ["delete_action", "transfer_funds"] # Example intents
+    require_pin = intent_data["intent"] in sensitive_intents or any(keyword in text for keyword in ["transfer"])
+
+    # Mock PIN for simulation if required
     mock_pin = "1234" if require_pin else None
 
     # Verify authorization
@@ -26,6 +33,7 @@ async def handle_voice_command(data: dict):
 
     if authorized:
         print(f"[Main] STATUS: AUTHORIZED for command: {text}")
+        # Next Step: Forward to Agent System (later)
     else:
         print(f"[Main] STATUS: DENIED for command: {text}")
 
