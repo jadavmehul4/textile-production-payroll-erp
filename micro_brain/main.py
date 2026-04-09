@@ -6,11 +6,12 @@ from micro_brain.security.security_manager import security_manager
 from micro_brain.core.intent_engine import intent_engine
 from micro_brain.core.command_engine import command_engine
 from micro_brain.core.action_executor import action_executor
+from micro_brain.agents.agent_manager import agent_manager
 
 async def handle_voice_command(data: dict):
     """
     Handle incoming voice commands through the full pipeline:
-    STT -> Intent -> Security -> Command -> Execution
+    STT -> Intent -> Security -> Command -> (Agent OR Executor)
     """
     text = data.get("text", "").lower()
     print(f"[Main] Event Received: voice_command -> {text}")
@@ -40,8 +41,16 @@ async def handle_voice_command(data: dict):
     command_data = command_engine.generate(intent_data)
     print(f"[Main] COMMAND: {command_data}")
 
-    # 4. Execute Action
-    result = action_executor.execute(command_data)
+    # 4. Routing: Agent OR ActionExecutor
+    agent = agent_manager.get_agent(command_data)
+
+    if agent:
+        print(f"[Main] Routing to specialized agent: {agent.name}")
+        result = agent.execute(command_data)
+    else:
+        print("[Main] Routing to direct ActionExecutor")
+        result = action_executor.execute(command_data)
+
     print(f"[Main] RESULT: {result}")
 
 @asynccontextmanager
