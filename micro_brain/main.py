@@ -7,11 +7,12 @@ from micro_brain.core.intent_engine import intent_engine
 from micro_brain.core.command_engine import command_engine
 from micro_brain.core.action_executor import action_executor
 from micro_brain.agents.agent_manager import agent_manager
+from micro_brain.memory.memory_manager import memory_manager
 
 async def handle_voice_command(data: dict):
     """
     Handle incoming voice commands through the full pipeline:
-    STT -> Intent -> Security -> Command -> (Agent OR Executor)
+    STT -> Intent -> Security -> Command -> (Agent OR Executor) -> Memory
     """
     text = data.get("text", "").lower()
     print(f"[Main] Event Received: voice_command -> {text}")
@@ -52,6 +53,15 @@ async def handle_voice_command(data: dict):
         result = action_executor.execute(command_data)
 
     print(f"[Main] RESULT: {result}")
+
+    # 5. Store in Memory
+    memory_manager.add({
+        "text": text,
+        "intent": intent_data,
+        "command": command_data,
+        "result": result
+    })
+    print("[Main] Memory stored")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
