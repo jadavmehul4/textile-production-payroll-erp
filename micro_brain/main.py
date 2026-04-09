@@ -10,11 +10,12 @@ from micro_brain.agents.agent_manager import agent_manager
 from micro_brain.memory.memory_manager import memory_manager
 from micro_brain.core.context_engine import context_engine
 from micro_brain.core.learning_engine import learning_engine
+from micro_brain.core.goal_engine import goal_engine
 
 async def handle_voice_command(data: dict):
     """
     Handle incoming voice commands through the full pipeline:
-    STT -> Intent -> Context -> Security -> Command -> (Agent OR Executor) -> Memory -> Learning
+    STT -> Intent -> Context -> Security -> Command -> (Agent OR Executor) -> Memory -> Learning -> Goals
     """
     text = data.get("text", "").lower()
     print(f"[Main] Event Received: voice_command -> {text}")
@@ -72,6 +73,10 @@ async def handle_voice_command(data: dict):
     # 7. Pattern Analysis (Learning)
     learning_data = learning_engine.analyze(memory_manager)
     print(f"[Main] LEARNING: {learning_data}")
+
+    # 8. Autonomous Goal Generation
+    goal_data = goal_engine.generate(learning_data, context)
+    print(f"[Main] GOALS: {goal_data}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
