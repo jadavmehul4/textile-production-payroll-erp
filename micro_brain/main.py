@@ -1,0 +1,88 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from micro_brain.core.event_bus import event_bus
+from micro_brain.voice.voice_listener import voice_listener
+from micro_brain.security.security_manager import security_manager
+from micro_brain.core.intent_engine import intent_engine
+from micro_brain.core.command_engine import command_engine
+from micro_brain.core.controller import controller
+from micro_brain.memory.memory_manager import memory_manager
+from micro_brain.core.context_engine import context_engine
+from micro_brain.core.learning_engine import learning_engine
+from micro_brain.core.goal_engine import goal_engine
+
+async def handle_voice_command(data: dict):
+    """
+    Handle incoming voice commands through the full foundation pipeline:
+    STT -> Intent -> Context -> Security -> Command -> Controller -> Memory -> Learning -> Goals
+    """
+    text = data.get("text", "").lower()
+    print(f"[Main] Event Received: voice_command -> {text}")
+
+    # 1. Parse Intent
+    intent_data = intent_engine.parse(text)
+    print(f"[Main] INTENT: {intent_data}")
+
+    # 2. Build Context
+    context = context_engine.build(memory_manager)
+    print(f"[Main] CONTEXT: {context}")
+
+    # 3. Security Check
+    sensitive_intents = ["delete_action", "transfer_funds"]
+    require_pin = intent_data["intent"] in sensitive_intents or "transfer" in text
+    mock_pin = "1234" if require_pin else None
+
+    authorized = security_manager.is_authorized(
+        audio_sample=None,
+        require_pin=require_pin,
+        pin=mock_pin
+    )
+
+    if not authorized:
+        print(f"[Main] STATUS: DENIED for command: {text}")
+        return
+
+    print(f"[Main] STATUS: AUTHORIZED for command: {text}")
+
+    # 4. Generate Command (Context-Aware)
+    command_data = command_engine.generate(intent_data, context=context)
+    print(f"[Main] COMMAND: {command_data}")
+
+    # 5. Execute via Controller (Unified Abstraction)
+    result = controller.execute(command_data)
+    print(f"[Main] RESULT: {result}")
+
+    # 6. Store in Memory
+    memory_manager.add({
+        "text": text,
+        "intent": intent_data,
+        "command": command_data,
+        "result": result
+    })
+    print("[Main] Memory stored")
+
+    # 7. Pattern Analysis (Learning)
+    learning_data = learning_engine.analyze(memory_manager)
+    print(f"[Main] LEARNING: {learning_data}")
+
+    # 8. Autonomous Goal Generation
+    goal_data = goal_engine.generate(learning_data, context)
+    print(f"[Main] GOALS: {goal_data}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    event_bus.register("voice_command", handle_voice_command)
+    voice_listener.start()
+    yield
+    # Shutdown
+    voice_listener.stop()
+
+app = FastAPI(title="Micro Brain AI", version="0.1.0", lifespan=lifespan)
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint to verify system status.
+    """
+    return {"status": "ok"}
