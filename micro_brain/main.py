@@ -8,11 +8,12 @@ from micro_brain.core.command_engine import command_engine
 from micro_brain.core.action_executor import action_executor
 from micro_brain.agents.agent_manager import agent_manager
 from micro_brain.memory.memory_manager import memory_manager
+from micro_brain.core.context_engine import context_engine
 
 async def handle_voice_command(data: dict):
     """
     Handle incoming voice commands through the full pipeline:
-    STT -> Intent -> Security -> Command -> (Agent OR Executor) -> Memory
+    STT -> Intent -> Context -> Security -> Command -> (Agent OR Executor) -> Memory
     """
     text = data.get("text", "").lower()
     print(f"[Main] Event Received: voice_command -> {text}")
@@ -21,7 +22,11 @@ async def handle_voice_command(data: dict):
     intent_data = intent_engine.parse(text)
     print(f"[Main] INTENT: {intent_data}")
 
-    # 2. Security Check
+    # 2. Build Context
+    context = context_engine.build(memory_manager)
+    print(f"[Main] CONTEXT: {context}")
+
+    # 3. Security Check
     sensitive_intents = ["delete_action", "transfer_funds"]
     require_pin = intent_data["intent"] in sensitive_intents or "transfer" in text
     mock_pin = "1234" if require_pin else None
@@ -38,11 +43,11 @@ async def handle_voice_command(data: dict):
 
     print(f"[Main] STATUS: AUTHORIZED for command: {text}")
 
-    # 3. Generate Command
-    command_data = command_engine.generate(intent_data)
+    # 4. Generate Command (Context-Aware)
+    command_data = command_engine.generate(intent_data, context=context)
     print(f"[Main] COMMAND: {command_data}")
 
-    # 4. Routing: Agent OR ActionExecutor
+    # 5. Routing: Agent OR ActionExecutor
     agent = agent_manager.get_agent(command_data)
 
     if agent:
@@ -54,7 +59,7 @@ async def handle_voice_command(data: dict):
 
     print(f"[Main] RESULT: {result}")
 
-    # 5. Store in Memory
+    # 6. Store in Memory
     memory_manager.add({
         "text": text,
         "intent": intent_data,
