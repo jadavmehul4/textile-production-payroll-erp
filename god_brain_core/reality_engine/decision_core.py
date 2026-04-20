@@ -38,6 +38,7 @@ class DecisionCore:
         final_action = {
             "agent_origin": winner["agent"],
             "score": winner["score"],
+            "risk": winner["risk"], # Propagate risk for MetaGovernor
             "original_proposal": winner["proposal"],
             "refined_action": refined_decision
         }

@@ -15,9 +15,16 @@ class ToolRegistry:
         """Loads all tools from static and generated directories."""
         logger.info("Discovering system tools...")
 
-        # Load static tools (hardcoded for demo, or list dir)
+        # Load static tools
         from tools.logger_tool import LoggerTool
+        from tools.web_search_tool import WebSearchTool
+        from tools.file_system_tool import FileSystemTool
+        from tools.api_tool import APITool
+
         self.register_tool(LoggerTool())
+        self.register_tool(WebSearchTool())
+        self.register_tool(FileSystemTool())
+        self.register_tool(APITool())
 
         # Load generated tools
         if os.path.exists(self.generated_dir):
@@ -35,7 +42,6 @@ class ToolRegistry:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            # Find classes that inherit from BaseTool
             for attr in dir(module):
                 cls = getattr(module, attr)
                 if isinstance(cls, type) and issubclass(cls, BaseTool) and cls is not BaseTool:
