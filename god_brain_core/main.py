@@ -4,18 +4,17 @@ import sys
 from dotenv import load_dotenv
 from loguru import logger
 
-# Phase 1 & 2 Modules
+# Phase 1, 2, 3 Modules
 from intelligence_amplifier.llm_brain import LLMBrain
 from omniversal_memory.knowledge_brain import KnowledgeBrain
 from agent_universe.agent_manager import AgentManager
 from reality_engine.decision_core import DecisionCore
-from tools.logger_tool import LoggerTool
+from tools.tool_registry import ToolRegistry
 
-# Phase 3 Modules
-from hyper_meta_cognition.self_reflection_engine import SelfReflectionEngine
-from intelligence_amplifier.self_improvement_engine import SelfImprovementEngine
-from intelligence_amplifier.skill_learning_engine import SkillLearningEngine
-from omniversal_memory.memory_evolution_engine import MemoryEvolutionEngine
+# Phase 4 Modules
+from agent_universe.roles.coder_agent import CoderAgent
+from security_omega.code_validator import CodeValidator
+from security_omega.sandbox_executor import SandboxExecutor
 
 # Architecture Stubs
 from security_omega.cognitive_defense_system import CognitiveDefenseSystem
@@ -26,7 +25,7 @@ logger.remove()
 logger.add(sys.stdout, colorize=True, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>")
 
 async def run_cognitive_cycle(user_input: str):
-    logger.info("--- Starting Ω GOD_BRAIN_CORE_Ω Phase 3 Cycle ---")
+    logger.info("--- Starting Ω GOD_BRAIN_CORE_Ω Phase 4 Cycle ---")
     logger.info("Goal: {}", user_input)
 
     # 1. Defense Audit
@@ -36,57 +35,72 @@ async def run_cognitive_cycle(user_input: str):
         logger.error("THREAT DETECTED. Aborting cycle.")
         return
 
-    # 2. Knowledge Retrieval
+    # 2. Tool Discovery & Knowledge Retrieval
+    registry = ToolRegistry()
+    registry.discover_tools()
+
     knowledge = KnowledgeBrain()
-    await knowledge.ingest_knowledge("Core directive: self-evolution.", source="base")
+    await knowledge.ingest_knowledge(f"Available tools: {list(registry.list_tools().keys())}", source="system_registry")
     context_results = await knowledge.semantic_search(user_input, k=1)
     context = context_results[0]["text"] if context_results else ""
 
-    # 3. Agent Coordination (Parallel Thinking)
+    # 3. Agent Coordination
     agent_manager = AgentManager()
     proposals = await agent_manager.coordinate(user_input, context)
 
     # 4. Decision Synthesis
     decision_engine = DecisionCore()
-    final_action = await decision_engine.synthesize(user_input, proposals)
+    final_decision = await decision_engine.synthesize(user_input, proposals)
 
-    # 5. Action Execution (Tools)
-    tool = LoggerTool()
-    outcome = await tool.execute(message=f"Executing decision: {final_action['refined_action'][:50]}...", level="SUCCESS")
+    # 5. Self-Expansion: Tool Creation (If needed)
+    # Trigger expansion if specifically requested or if decision implies it
+    if any(keyword in user_input.lower() for keyword in ["create tool", "generate tool", "new tool"]) or \
+       any(keyword in final_decision["refined_action"].lower() for keyword in ["create tool", "need specialized tool"]):
 
-    # 6. Self-Reflection
-    reflection_engine = SelfReflectionEngine()
-    reflection = await reflection_engine.reflect(user_input, final_action, outcome)
+        logger.info("Self-Expansion triggered: Initiating tool creation...")
+        coder = CoderAgent()
+        tool_req = f"A tool to help with: {user_input}"
+        generated = await coder.generate_tool(tool_req)
 
-    # 7. Self-Improvement
-    improvement_engine = SelfImprovementEngine()
-    params = await improvement_engine.apply_improvement(reflection)
+        # 6. Safety Validation
+        validator = CodeValidator()
+        is_safe, reason = validator.validate(generated["code"])
 
-    # 8. Skill Learning
-    skill_engine = SkillLearningEngine()
-    new_skill = await skill_engine.learn_skill(context=str(reflection))
+        if is_safe:
+            # 7. Sandbox Execution & Registration
+            executor = SandboxExecutor()
+            exec_result = await executor.execute_tool_logic(generated["code"], {})
 
-    # 9. Memory Evolution
-    evolution_engine = MemoryEvolutionEngine(knowledge)
-    await evolution_engine.evolve_memory()
+            if exec_result["status"] == "success":
+                await coder.save_tool(generated)
+                registry.discover_tools() # Reload
+                logger.success("New tool '{}' successfully expanded into system.", generated["name"])
+            else:
+                logger.error("Sandbox execution of generated tool failed: {}", exec_result.get("message"))
+        else:
+            logger.warning("Generated tool failed safety validation: {}", reason)
 
-    # 10. Final Memory Update
+    # 8. Action Execution (Using expanded tool if it was the winner, otherwise logger)
+    tool_to_use = registry.get_tool("LoggerTool")
+    await tool_to_use.execute(message=f"Decision Outcome: {final_decision['refined_action'][:50]}...", level="SUCCESS")
+
+    # 9. Final Update
     await knowledge.ingest_knowledge(
-        text=f"Cycle Result: Goal='{user_input}', NewSkill='{new_skill['skill'][:30]}', ImprovLR={round(params['learning_rate'], 4)}",
-        source="phase_3_cycle_completion"
+        text=f"Phase 4 cycle complete for goal: {user_input}.",
+        source="phase_4_output"
     )
 
-    # 11. Nervous System Broadcast
+    # 10. Nervous System Broadcast
     nervous = NervousSystem()
-    await nervous.broadcast("Phase 3 Self-Improving Cycle Complete.")
-    logger.info("--- Phase 3 Cycle Complete ---")
+    await nervous.broadcast("Phase 4 Self-Expansion Cycle Complete.")
+    logger.info("--- Phase 4 Cycle Complete ---")
 
 async def main():
     load_dotenv()
     if len(sys.argv) > 1:
         user_input = " ".join(sys.argv[1:])
     else:
-        user_input = "Initiate a recursive self-improvement protocol to optimize cognitive latency."
+        user_input = "Create tool for calculating cognitive entropy."
 
     await run_cognitive_cycle(user_input)
 
