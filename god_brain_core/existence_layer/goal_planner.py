@@ -1,4 +1,5 @@
 import asyncio
+from loguru import logger
 
 class GoalPlanner:
     """
@@ -8,15 +9,19 @@ class GoalPlanner:
     Dependency graphs
     Execution pipelines
     """
-    def __init__(self):
+    def __init__(self, max_depth=10):
         self.active_plans = {}
+        self.max_depth = max_depth
 
-    async def create_plan(self, goal: str, constraints: list = None):
-        """Decomposes a goal into a multi-step plan."""
-        # In a real scenario, this might call the LLM to decompose the goal.
-        # For Phase 1, we implement the engine logic.
+    async def create_plan(self, goal: str, constraints: list = None, depth=0):
+        """Decomposes a goal into a multi-step plan with depth protection."""
+        if depth > self.max_depth:
+            logger.error("Max planning depth reached for goal: {}", goal)
+            return None
 
-        # Simple heuristic decomposition for demonstration
+        logger.info("Creating plan for goal: {} (Depth: {})", goal, depth)
+
+        # Simple heuristic decomposition
         tasks = [
             {"id": 1, "task": f"Analyze requirements for: {goal}", "depends_on": [], "status": "pending"},
             {"id": 2, "task": f"Resource allocation for: {goal}", "depends_on": [1], "status": "pending"},
@@ -24,12 +29,13 @@ class GoalPlanner:
             {"id": 4, "task": f"Validation and meta-audit of: {goal}", "depends_on": [3], "status": "pending"}
         ]
 
-        plan_id = hash(goal)
+        plan_id = hash(goal + str(depth))
         self.active_plans[plan_id] = {
             "goal": goal,
             "tasks": tasks,
             "constraints": constraints or [],
-            "status": "active"
+            "status": "active",
+            "depth": depth
         }
 
         return plan_id
@@ -57,6 +63,7 @@ class GoalPlanner:
             for task in plan["tasks"]:
                 if task["id"] == task_id:
                     task["status"] = status
+                    logger.debug("Task {} in plan {} updated to {}", task_id, plan_id, status)
                     return True
         return False
 

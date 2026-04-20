@@ -1,4 +1,5 @@
 import asyncio
+from loguru import logger
 
 class MultiverseSimulator:
     def __init__(self):
@@ -6,6 +7,7 @@ class MultiverseSimulator:
 
     async def simulate_timeline(self, action: str):
         await asyncio.sleep(0.01)
+        logger.debug("Simulating outcome for action: {}", action)
         return {"outcome": "success", "probability": 0.8}
 
     async def optimize_outcome(self, scenarios: list):
