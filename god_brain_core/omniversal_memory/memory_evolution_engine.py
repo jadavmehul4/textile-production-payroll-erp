@@ -1,6 +1,7 @@
 import asyncio
 from loguru import logger
 from omniversal_memory.knowledge_brain import KnowledgeBrain
+from intelligence_amplifier.llm_brain import LLMBrain
 
 class MemoryEvolutionEngine:
     """
@@ -11,22 +12,30 @@ class MemoryEvolutionEngine:
     """
     def __init__(self, knowledge_brain: KnowledgeBrain):
         self.kb = knowledge_brain
+        self.llm = LLMBrain()
 
     async def evolve_memory(self):
         """Optimizes and reorganizes the KnowledgeBrain."""
-        logger.info("Initiating memory evolution cycle...")
+        logger.info("Jules AI: Initiating cognitive memory evolution cycle...")
 
         if len(self.kb.metadata) < 2:
-            logger.info("Insufficient memory depth for evolution.")
+            logger.info("Memory depth insufficient for evolution baseline.")
             return False
 
-        # Heuristic: Promote most recent result if it was successful
-        # In a real scenario, this would involve clustering or pattern detection
-        logger.info("Detecting patterns across {} memories...", len(self.kb.metadata))
+        # Pattern detection
+        recent_memories = [m["text"] for m in self.kb.metadata[-10:]]
+        prompt = (
+            f"Recent System Memories: {recent_memories}\n"
+            "Analyze these memories. Extract one high-level recurring pattern or strategic 'lesson' "
+            "that should be promoted to the long-term core knowledge base."
+        )
 
-        # Simulate pattern detection
-        pattern = "Found recurring goal optimization theme"
-        await self.kb.ingest_knowledge(f"Pattern Detected: {pattern}", source="memory_evolution")
+        pattern = await self.llm.reason(prompt)
 
-        logger.success("Memory evolution complete. Promotion and pattern detection successful.")
+        await self.kb.ingest_knowledge(f"Evolution Pattern: {pattern}", source="memory_evolution")
+
+        # In a production system, we'd also implement 'forgetting' logic here
+        # for low-utility memories using vector similarity or access frequency.
+
+        logger.success("Memory evolution complete. Promotion success, Sir.")
         return True

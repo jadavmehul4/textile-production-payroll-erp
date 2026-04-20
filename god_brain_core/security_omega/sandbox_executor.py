@@ -1,45 +1,82 @@
 import asyncio
+import os
 import sys
-import io
+import multiprocessing
 from loguru import logger
 from tools.base_tool import BaseTool
 
 class SandboxExecutor:
-    """Executes validated code in a restricted environment."""
+    """Production-grade executor for validated code using isolated process pools."""
 
     async def execute_tool_logic(self, code: str, kwargs: dict):
-        """Runs the tool code with provided arguments in a restricted namespace."""
-        logger.info("Executing code in sandbox...")
+        """Runs validated code in a highly restricted process-based sandbox."""
+        logger.info("Jules AI: Initializing sandbox for tool execution...")
 
-        # Capture stdout
-        stdout = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = stdout
+        # Define the worker function for the process pool
+        def worker(code_str, args_dict, queue):
+            # Capture stdout
+            import sys, io
+            from tools.base_tool import BaseTool
+
+            stdout = io.StringIO()
+            sys.stdout = stdout
+
+            # Ultra-restricted namespace
+            safe_globals = {
+                "BaseTool": BaseTool,
+                "logger": logger,
+                "__builtins__": {
+                    "print": print, "range": range, "len": len, "list": list, "dict": dict,
+                    "str": str, "int": int, "float": float, "bool": bool, "Exception": Exception,
+                    "sum": sum, "min": min, "max": max, "abs": abs, "round": round
+                }
+            }
+
+            try:
+                local_ns = {}
+                exec(code_str, safe_globals, local_ns)
+
+                # Identify the tool class
+                tool_class = None
+                for attr in local_ns.values():
+                    if isinstance(attr, type) and issubclass(attr, BaseTool) and attr is not BaseTool:
+                        tool_class = attr
+                        break
+
+                if tool_class:
+                    instance = tool_class()
+                    # Execute logic synchronously if not async, or use a bridge
+                    # Since the user tools are async, we need an event loop in the worker process
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(instance.execute(**args_dict))
+                    queue.put({"status": "success", "result": result, "output": stdout.getvalue()})
+                else:
+                    queue.put({"status": "error", "message": "No valid tool class found."})
+            except Exception as e:
+                queue.put({"status": "error", "message": str(e), "output": stdout.getvalue()})
+
+        # Use a Queue to get result from process
+        queue = multiprocessing.Queue()
+        p = multiprocessing.Process(target=worker, args=(code, kwargs, queue))
 
         try:
-            # Local namespace for execution
-            local_namespace = {"BaseTool": BaseTool, "logger": logger}
+            p.start()
+            # Wait for result with timeout
+            start_time = asyncio.get_event_loop().time()
+            while p.is_alive():
+                if asyncio.get_event_loop().time() - start_time > 30.0:
+                    p.terminate()
+                    return {"status": "error", "message": "Sandbox execution timeout."}
+                await asyncio.sleep(0.1)
 
-            # Exec the code
-            exec(code, local_namespace, local_namespace)
-
-            # Find the class that was defined
-            tool_class = None
-            for attr in local_namespace.values():
-                if isinstance(attr, type) and issubclass(attr, BaseTool) and attr is not BaseTool:
-                    tool_class = attr
-                    break
-
-            if tool_class:
-                # Instantiate and execute
-                tool_instance = tool_class()
-                result = await tool_instance.execute(**kwargs)
-                return {"status": "success", "result": result, "output": stdout.getvalue()}
-
-            return {"status": "error", "message": "No tool class found in generated code"}
+            if not queue.empty():
+                return queue.get()
+            return {"status": "error", "message": "Sandbox process crashed or returned no data."}
 
         except Exception as e:
-            logger.error("Sandbox execution failed: {}", e)
+            logger.error("Sandbox initialization failed: {}", e)
             return {"status": "error", "message": str(e)}
         finally:
-            sys.stdout = old_stdout
+            if p.is_alive(): p.join()

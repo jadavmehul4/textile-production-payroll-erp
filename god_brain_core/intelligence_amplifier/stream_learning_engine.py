@@ -11,16 +11,23 @@ class StreamLearningEngine:
 
     async def ingest_stream_data(self, data: str):
         """Adds new information to the continuous learning stream."""
+        logger.debug("Jules AI: Ingesting telemetry into stream learning buffer...")
         self.learning_buffer.append(data)
-        if len(self.learning_buffer) > 20:
+        if len(self.learning_buffer) > 10:
             await self._trigger_learning_cycle()
 
     async def _trigger_learning_cycle(self):
         """Analyzes the stream buffer to extract new insights or parameter updates."""
-        logger.info("Triggering stream learning cycle for {} items...", len(self.learning_buffer))
+        logger.info("Jules AI: Triggering autonomous stream learning cycle for {} items...", len(self.learning_buffer))
 
-        # Simulate background model refinement
-        await asyncio.sleep(2)
+        prompt = (
+            f"Telemetry Stream Data: {self.learning_buffer}\n"
+            "Analyze this stream of system events. Identify any recurring performance patterns "
+            "or potential for algorithmic optimization. Respond with one actionable insight."
+        )
+
+        insight = await self.llm.reason(prompt)
+        logger.success("Stream learning optimization complete: {}", insight[:60])
 
         self.learning_buffer = []
-        logger.success("Stream learning cycle complete. Internal weights optimized.")
+        return insight
