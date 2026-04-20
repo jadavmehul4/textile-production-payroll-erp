@@ -4,14 +4,17 @@ import sys
 from dotenv import load_dotenv
 from loguru import logger
 
-# Import Phase 1 Functional Modules
+# Phase 1 Modules
 from intelligence_amplifier.llm_brain import LLMBrain
 from omniversal_memory.knowledge_brain import KnowledgeBrain
 from existence_layer.goal_planner import GoalPlanner
 
-# Import Base Architecture Stubs
-from hyper_meta_cognition.internal_intelligence_core import InternalIntelligenceCore
-from hyper_meta_cognition.meta_cognition_engine import MetaCognitionEngine
+# Phase 2 Modules
+from agent_universe.agent_manager import AgentManager
+from reality_engine.decision_core import DecisionCore
+from tools.logger_tool import LoggerTool
+
+# Architecture Stubs
 from security_omega.cognitive_defense_system import CognitiveDefenseSystem
 from communication_singularity.nervous_system import NervousSystem
 
@@ -20,68 +23,52 @@ logger.remove()
 logger.add(sys.stdout, colorize=True, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>")
 
 async def run_cognitive_cycle(user_input: str):
-    logger.info("--- Starting Cognitive Cycle ---")
-    logger.info("User Input: {}", user_input)
+    logger.info("--- Starting Ω GOD_BRAIN_CORE_Ω Phase 2 Cycle ---")
+    logger.info("Goal: {}", user_input)
 
-    # 1. Defense System Audit
+    # 1. Defense Audit
     defense = CognitiveDefenseSystem()
     threat = await defense.detect_threat(user_input)
     if threat["detected"]:
-        logger.error("THREAT DETECTED: {}. Aborting cycle.", threat['threat_level'])
+        logger.error("THREAT DETECTED. Aborting cycle.")
         return
 
-    # 2. Memory Retrieval (Semantic Memory)
+    # 2. Knowledge Retrieval
     knowledge = KnowledgeBrain()
-    # Ingest some base directive for context
-    await knowledge.ingest_knowledge("The core directive of Ω GOD_BRAIN_CORE_Ω is self-evolution and cognitive sovereignty.", source="base_directive")
+    await knowledge.ingest_knowledge("The core directive is cognitive sovereignty.", source="base")
+    context_results = await knowledge.semantic_search(user_input, k=1)
+    context = context_results[0]["text"] if context_results else ""
 
-    related_context = await knowledge.semantic_search(user_input, k=1)
-    context_str = related_context[0]["text"] if related_context else "No relevant context found."
-    logger.info("Memory Retrieval: {}", context_str)
+    # 3. Agent Coordination (Parallel Thinking)
+    agent_manager = AgentManager()
+    proposals = await agent_manager.coordinate(user_input, context)
 
-    # 3. Internal Thinking
-    brain_core = InternalIntelligenceCore()
-    thought = await brain_core.generate_thought(user_input)
-    logger.info("Core Thought: {}", thought)
+    # 4. Decision Synthesis
+    decision_engine = DecisionCore()
+    final_action = await decision_engine.synthesize(user_input, proposals)
+    logger.success("Final Decision Synthesized: {}", final_action["refined_action"][:100])
 
-    # 4. Meta-Cognition (Audit)
-    meta = MetaCognitionEngine()
-    audit = await meta.audit_thought(thought)
-    logger.info("Meta-Audit Status: {} (Confidence: {})", audit['status'], audit['confidence'])
+    # 5. Action Execution (Tools)
+    tool = LoggerTool()
+    await tool.execute(message=f"Executing decision from {final_action['agent_origin']}: {final_action['refined_action'][:100]}...", level="SUCCESS")
 
-    # 5. Goal Planning
-    planner = GoalPlanner()
-    plan_id = await planner.create_plan(user_input)
-    if plan_id:
-        next_tasks = await planner.get_next_tasks(plan_id)
-        logger.info("Goal Planner: Created plan {} with {} initial tasks.", plan_id, len(next_tasks))
-    else:
-        logger.error("Goal Planner failed to create plan.")
-
-    # 6. Deep Reasoning (LLM Integration)
-    llm = LLMBrain()
-    full_reasoning = await llm.reason(user_input, context=context_str)
-    logger.success("LLM Reasoning Output:\n{}", full_reasoning)
+    # 6. Memory Update
+    await knowledge.ingest_knowledge(
+        text=f"Completed goal: {user_input}. Decision: {final_action['refined_action']}",
+        source="cognitive_cycle_output"
+    )
 
     # 7. Nervous System Broadcast
     nervous = NervousSystem()
-    await nervous.broadcast(f"Cycle complete for input: {user_input[:20]}...")
-
-    logger.info("--- Cognitive Cycle Complete ---")
+    await nervous.broadcast("Phase 2 Cognitive Cycle Complete.")
+    logger.info("--- Phase 2 Cycle Complete ---")
 
 async def main():
     load_dotenv()
-
-    # Check for API key
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.warning("OPENAI_API_KEY is not set. LLM and Knowledge Brain will run in simulation mode.")
-
-    # Dynamic Input
     if len(sys.argv) > 1:
         user_input = " ".join(sys.argv[1:])
     else:
-        # Fallback to a default if no args provided in non-interactive environment
-        user_input = "Develop a strategy for autonomous cognitive growth while maintaining strict safety protocols."
+        user_input = "Coordinate an autonomous intelligence expansion protocol."
 
     await run_cognitive_cycle(user_input)
 
