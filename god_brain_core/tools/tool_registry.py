@@ -4,7 +4,7 @@ from loguru import logger
 from tools.base_tool import BaseTool
 
 class ToolRegistry:
-    """Dynamically loads and manages all system tools."""
+    """Dynamically loads and manages all system tools (Jules AI Optimized)."""
 
     def __init__(self):
         self.tools = {}
@@ -13,18 +13,22 @@ class ToolRegistry:
 
     def discover_tools(self):
         """Loads all tools from static and generated directories."""
-        logger.info("Discovering system tools...")
+        logger.info("Jules AI: Syncing system capabilities...")
 
-        # Load static tools
+        # Load core tools
         from tools.logger_tool import LoggerTool
         from tools.web_search_tool import WebSearchTool
         from tools.file_system_tool import FileSystemTool
         from tools.api_tool import APITool
+        from tools.adb_bridge import ADBBridge
+        from tools.kernel_bridge import KernelBridge
 
         self.register_tool(LoggerTool())
         self.register_tool(WebSearchTool())
         self.register_tool(FileSystemTool())
         self.register_tool(APITool())
+        self.register_tool(ADBBridge())
+        self.register_tool(KernelBridge())
 
         # Load generated tools
         if os.path.exists(self.generated_dir):
@@ -32,7 +36,7 @@ class ToolRegistry:
                 if filename.startswith("tool_") and filename.endswith(".py"):
                     self._load_from_file(os.path.join(self.generated_dir, filename))
 
-        logger.success("Tool discovery complete. Total tools: {}", len(self.tools))
+        logger.success("Capability sync complete. SIR, I am ready.")
 
     def _load_from_file(self, filepath: str):
         """Dynamically imports a tool from a file."""
@@ -47,12 +51,12 @@ class ToolRegistry:
                 if isinstance(cls, type) and issubclass(cls, BaseTool) and cls is not BaseTool:
                     self.register_tool(cls())
         except Exception as e:
-            logger.error("Failed to load tool from {}: {}", filepath, e)
+            logger.error("Failed to load capability from {}: {}", filepath, e)
 
     def register_tool(self, tool: BaseTool):
         """Registers a tool instance."""
         self.tools[tool.name] = tool
-        logger.debug("Registered tool: {}", tool.name)
+        logger.debug("Registered system tool: {}", tool.name)
 
     def get_tool(self, name: str):
         """Retrieves a tool by name."""

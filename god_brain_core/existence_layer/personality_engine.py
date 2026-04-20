@@ -1,25 +1,31 @@
 from loguru import logger
 
 class PersonalityEngine:
-    """Adjusts decision-making style and behavior based on identity and history."""
+    """Enforces the 'Elite, Technical, and Cinematic' tone and behavior of Jules AI."""
 
     def __init__(self, identity_core):
         self.identity = identity_core
 
+    async def apply_tone(self, message: str):
+        """Refines system output to match the Jules AI V10.0 persona."""
+        # Simple heuristic for cinematic tone
+        return f"System Protocol: {message} | Status: NOMINAL"
+
     async def influence_decision_weight(self, agent_proposals: list):
-        """Modifies agent scores based on the system's current personality traits."""
-        logger.info("Personality Engine influencing agent selection...")
+        """Modifies agent scores based on elite system traits."""
+        logger.info("Jules AI Personality Engine optimizing decision weights...")
 
         traits = self.identity.identity.get("personality_traits", {})
-
-        # Logic: If 'cautious' is high, penalize risk more heavily
-        cautious_factor = traits.get("cautious", 0.5)
+        stealth_factor = traits.get("stealth", 1.0)
 
         for p in agent_proposals:
-            if "risk" in p:
-                # Personality-adjusted penalty: risk * (standard_weight + cautious_multiplier)
-                # DecisionCore uses 0.4 standard. We add influence here.
-                p["risk_penalty_multiplier"] = 1.0 + (cautious_factor * 0.5)
+            # Penalize non-stealthy or high-risk actions more heavily in Ghost Protocol
+            risk = p.get("risk", 0.0)
+            p["risk_penalty_multiplier"] = 1.0 + (risk * stealth_factor * 2.0)
 
-        logger.debug("Applied personality-driven risk weights to {} proposals.", len(agent_proposals))
+            # Boost analytical efficiency
+            if p.get("role") == "Analyst":
+                p["confidence"] *= 1.1
+
+        logger.debug("Decision weights optimized for Elite performance.")
         return agent_proposals
