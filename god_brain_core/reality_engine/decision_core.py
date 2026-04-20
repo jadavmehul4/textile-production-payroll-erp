@@ -14,8 +14,11 @@ class DecisionCore:
 
         scored_proposals = []
         for p in proposals:
-            # Score = (confidence * 0.6) - (risk * 0.4)
-            score = (p["confidence"] * 0.6) - (p["risk"] * 0.4)
+            # Score = (confidence * 0.6) - (risk * (0.4 * multiplier))
+            # The multiplier comes from the PersonalityEngine (Phase 8)
+            risk_penalty_multiplier = p.get("risk_penalty_multiplier", 1.0)
+
+            score = (p["confidence"] * 0.6) - (p["risk"] * 0.4 * risk_penalty_multiplier)
             p["score"] = round(score, 3)
             scored_proposals.append(p)
             logger.debug("Agent {}: Score {}", p["agent"], p["score"])
@@ -38,7 +41,7 @@ class DecisionCore:
         final_action = {
             "agent_origin": winner["agent"],
             "score": winner["score"],
-            "risk": winner["risk"], # Propagate risk for MetaGovernor
+            "risk": winner["risk"],
             "original_proposal": winner["proposal"],
             "refined_action": refined_decision
         }
